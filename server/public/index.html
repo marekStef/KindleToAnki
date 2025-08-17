@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kindle Vocab → Anki</title>
+    <style>
+      :root { --pad: 16px; --radius: 14px; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b0f14; color: #e6edf3; }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+      h1 { font-size: 1.6rem; margin: 0 0 16px; }
+      .card { background: #111822; border: 1px solid #1f2a37; border-radius: var(--radius); padding: var(--pad); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+      .row { display: grid; gap: 12px; grid-template-columns: 1fr; }
+      label { font-weight: 600; font-size: .95rem; }
+      input[type="text"], input[type="password"], input[type="number"], select { width: 100%; background: #0b1220; color: #e6edf3; border: 1px solid #2a3a4b; border-radius: 10px; padding: 10px 12px; }
+      input[type="file"] { padding: 8px; }
+      .btn { cursor: pointer; background: #2a62ff; color: white; border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 600; }
+      .btn:disabled { opacity: .5; cursor: not-allowed; }
+      .muted { color: #93a4b7; font-size: .9rem; }
+      .hr { height: 1px; background: #1f2a37; margin: 16px 0; }
+      .hidden { display: none; }
+      .pill { display: inline-block; padding: 4px 10px; border:1px solid #2a3a4b; border-radius:999px; font-size:.8rem; }
+      .grid-2 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+      a.download { display:inline-block; margin-top: 10px; }
+      .ok { color: #3ad29f; }
+      .err { color: #ff6b6b; }
+      .hint { font-size: .85rem; color: #9fb0c2; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Kindle Vocab → Anki</h1>
+      <div class="card">
+        <div id="step1">
+          <div class="row">
+            <label>Access password</label>
+            <input id="pw" type="password" placeholder="Enter password" />
+            <label>Kindle vocab.db</label>
+            <input id="file" type="file" accept=".db" />
+            <button id="uploadBtn" class="btn">Upload & List Books</button>
+            <div id="s1msg" class="muted"></div>
+          </div>
+        </div>
+
+        <div id="step2" class="hidden">
+          <div class="hr"></div>
+          <div class="row">
+            <label>Pick a book</label>
+            <select id="book"></select>
+            <div class="hint" id="bookStats"></div>
+            <label>Deck name</label>
+            <input id="deck" type="text" placeholder="e.g., The Great Gatsby" />
+            <div class="grid-2">
+              <label><input id="perWord" type="checkbox" /> One card per unique word (latest sentence)</label>
+              <label><input id="noScrape" type="checkbox" /> Disable Cambridge scrape</label>
+            </div>
+            <label>Concurrency (1–8)</label>
+            <input id="conc" type="number" min="1" max="8" value="1" />
+            <button id="buildBtn" class="btn">Build .apkg</button>
+            <div id="s2msg" class="muted"></div>
+          </div>
+        </div>
+
+        <div id="step3" class="hidden">
+          <div class="hr"></div>
+          <div class="row">
+            <div id="done" class="ok">Deck ready.</div>
+            <a id="dl" class="download btn" href="#">Download .apkg</a>
+            <div class="hint">You can upload another DB to make more decks. Files auto-clean after a while.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>

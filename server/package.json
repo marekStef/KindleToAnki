@@ -1,0 +1,22 @@
+{
+  "name": "kindle-vocab-to-anki-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@steve2955/anki-apkg-export": "github:steve2955/anki-apkg-export",
+    "better-sqlite3": "^12.2.0",
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "marked": "^16.1.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "nanoid": "^5.1.5"
+  }
+}

@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  app:
+    build:
+      context: ./server
+    image: kindle-vocab-to-anki:latest
+    container_name: kindle-vocab-to-anki
+    environment:
+      - TZ=Europe/Bratislava
+      - APP_PASSWORD=${APP_PASSWORD}
+      - PORT=8080
+      - MAX_UPLOAD_MB=50
+      - CLEANUP_MINUTES=60
+    ports:
+      - "88:8080"
+    volumes:
+      - /home/marek/docker/kindleToAnki/data:/app/data
+    restart: unless-stopped
+    # If you prefer pulling from a registry, build once and push your image, then replace `build:` with `image:` only.
+volumes:
+  data:
