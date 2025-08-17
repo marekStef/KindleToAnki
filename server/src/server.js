@@ -9,6 +9,11 @@ import { nanoid } from "nanoid";
 import { env, toInt, assert } from "./util.js";
 import { listBooksFromVocab, buildApkg } from "./convert.js";
 
+import { EventEmitter } from "node:events";
+
+// in-memory job registry  (id → {emitter, fileName, downloadId})
+const jobs = new Map();
+
 const APP_PASSWORD = env("APP_PASSWORD");
 const PORT = toInt(env("PORT"), 8080);
 const MAX_UPLOAD_MB = toInt(env("MAX_UPLOAD_MB"), 50);
@@ -96,7 +101,7 @@ app.post("/api/upload", requirePassword, upload.single("db"), async (req, res, n
 });
 
 // Convert request: requires token, bookId, deckName, options
-app.post("/api/convert", express.json(), async (req, res, next) => {
+app.post("/api/convert", async (req, res, next) => {
   try {
     assert(checkPassword(req), "Unauthorized", 401);
     const { token, bookId, deckName, perWord, noScrape, concurrency } = req.body || {};
@@ -108,26 +113,78 @@ app.post("/api/convert", express.json(), async (req, res, next) => {
     const exists = await fs.access(metaPath).then(() => true).catch(() => false);
     assert(exists, "Invalid or expired token");
 
-    const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+     const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
 
-    const buf = await buildApkg({
-      dbPath: meta.path,
-      bookId,
-      deckName,
-      perWord: !!perWord,
-      noScrape: !!noScrape,
-      concurrency: toInt(concurrency, 4)
-    });
+    // ── 1. register a job ───────────────────────────────────────────────────
+    const jobId      = nanoid();
+    const downloadId = nanoid();              // will name the output file
+    const emitter    = new EventEmitter();
+    jobs.set(jobId, { emitter, done:false });
 
-    const downloadId = nanoid();
-    const fileNameSafe = deckName.replace(/[\\/:*?"<>|]/g, "_") || "Kindle_Vocab";
-    const outPath = path.join(outDir, `${downloadId}__${fileNameSafe}.apkg`);
-    await fs.writeFile(outPath, buf);
+    // ── 2. fire-and-forget worker ───────────────────────────────────────────
+    (async () => {
+      try {
+        const buf = await buildApkg({
+          dbPath: meta.path,
+          bookId,
+          deckName,
+          perWord,
+          noScrape,
+          concurrency,
+          onProgress: (p) => emitter.emit("progress", p)
+        });
 
-    res.json({ ok: true, downloadId, fileName: `${fileNameSafe}.apkg` });
+        // 3️⃣ save & mark done
+        const safeName  = deckName.replace(/[^-\w .]/g, "_") + ".apkg";
+        const outPath   = path.join(outDir, `${downloadId}__${safeName}`);
+        await fs.writeFile(outPath, buf);
+
+        emitter.emit("done", { downloadId, fileName: safeName });
+        Object.assign(jobs.get(jobId), { done:true, downloadId, fileName:safeName });
+      } catch (err) {
+        emitter.emit("error", err.message || String(err));
+      }
+    })();
+
+    // ── 4. immediate HTTP response ──────────────────────────────────────────
+    res.json({ ok:true, jobId });
   } catch (e) {
     next(e);
   }
+});
+
+// SSE progress stream
+app.get("/api/progress/:id", requirePassword, (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).end();
+
+  res.set({
+    "Content-Type":  "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection:      "keep-alive"
+  });
+  res.flushHeaders();
+
+  const send = (type, data) =>
+    res.write(`event:${type}\ndata:${JSON.stringify(data)}\n\n`);
+
+  const { emitter, done, downloadId, fileName } = job;
+  if (done) send("done", { downloadId, fileName });
+
+  const onProgress = (p) => send("progress", p);
+  const onDone     = (d) => { send("done", d); finish(); };
+  const onErr      = (e) => { send("error", e); finish(); };
+
+  const finish = () => {
+    emitter.off("progress", onProgress);
+    emitter.off("done", onDone);
+    emitter.off("error", onErr);
+    res.end();
+  };
+
+  emitter.on("progress", onProgress);
+  emitter.once("done", onDone);
+  emitter.once("error", onErr);
 });
 
 // Download result

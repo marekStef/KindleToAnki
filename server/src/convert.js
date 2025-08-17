@@ -232,7 +232,8 @@ export async function buildApkg({
   deckName,
   perWord = false,
   noScrape = false,
-  concurrency = 4
+  concurrency = 4,
+  onProgress = () => {}
 }) {
   // Validate presence
   await fs.access(dbPath);
@@ -243,6 +244,9 @@ export async function buildApkg({
 
     const apkg = new AnkiExport(deckName || "Kindle Vocab");
     const limit = pLimit(Math.max(1, Math.min(8, Number(concurrency) || 4)));
+
+    let done = 0;
+    const total = rows.length;
 
     const tasks = rows.map((row) => async () => {
       const word = clean(row.word || "");
@@ -269,6 +273,9 @@ export async function buildApkg({
       `;
 
       apkg.addCard(frontTitle, backHtml);
+
+      done += 1;
+      onProgress({ done, total });
     });
 
     await Promise.all(tasks.map((t) => limit(t)));

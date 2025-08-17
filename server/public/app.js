@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let token = null;
+let building = false;
 
 function msg(el, text, isErr = false) {
   el.textContent = text || "";
@@ -68,6 +69,8 @@ $("uploadBtn").addEventListener("click", async () => {
 });
 
 $("buildBtn").addEventListener("click", async () => {
+  // ‼️ ignore clicks while a build is already running
+  if (building) return;
   const pw = $("pw").value.trim();
   const bookId = $("book").value;
   const deckName = $("deck").value.trim();
@@ -85,7 +88,8 @@ $("buildBtn").addEventListener("click", async () => {
   }
 
   $("buildBtn").disabled = true;
-  msg($("s2msg"), "Building deck… this may take a bit.");
+  building = true;
+  msg($("s2msg"), "Starting build…");
 
   try {
     const res = await fetch("/api/convert", {
@@ -99,16 +103,47 @@ $("buildBtn").addEventListener("click", async () => {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Conversion failed");
 
+    
+    
+  // 2️⃣ open SSE stream for live updates
+  const ev = new EventSource(
+    `/api/progress/${data.jobId}?password=${encodeURIComponent(pw)}`
+  );
+
+  $("pbWrap").classList.remove("hidden");
+  $("pb").value = 0; $("pct").textContent = "0 %";
+  msg($("s2msg"), "Building deck…");
+
+  ev.addEventListener("progress", (e) => {
+    const { done, total } = JSON.parse(e.data);
+    const pct = Math.round((done / total) * 100);
+    $("pb").value = pct; $("pct").textContent = pct + " %";
+  });
+
+  ev.addEventListener("done", (e) => {
+    const { downloadId, fileName } = JSON.parse(e.data);
+    $("pb").value = 100; $("pct").textContent = "100 %";
+
     const dl = $("dl");
-    dl.href = `/api/download/${data.downloadId}?password=${encodeURIComponent(pw)}`;
-    dl.download = data.fileName || "deck.apkg";
+    dl.href = `/api/download/${downloadId}?password=${encodeURIComponent(pw)}`;
+    dl.download = fileName || "deck.apkg";
 
     $("step3").classList.remove("hidden");
-    msg($("s2msg"), "Done.");
+    msg($("s2msg"), "Deck ready!");
+    ev.close();
+    building = false; 
+    $("buildBtn").disabled = false;
+  });
+
+  ev.addEventListener("error", (e) => {
+    msg($("s2msg"), "Error: " + e.data, true);
+    ev.close();
+    building = false;
+    $("buildBtn").disabled = false;
+  });
   } catch (e) {
     console.error(e);
+    building = false;  
     msg($("s2msg"), e.message || "Conversion failed", true);
-  } finally {
-    $("buildBtn").disabled = false;
   }
 });

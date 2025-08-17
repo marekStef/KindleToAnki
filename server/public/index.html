@@ -57,6 +57,10 @@
             <label>Concurrency (1–8)</label>
             <input id="conc" type="number" min="1" max="8" value="1" />
             <button id="buildBtn" class="btn">Build .apkg</button>
+            <div id="pbWrap" class="hidden">
+              <progress id="pb" max="100" value="0"></progress>
+              <span id="pct">0 %</span>
+            </div>
             <div id="s2msg" class="muted"></div>
           </div>
         </div>
