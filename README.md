@@ -10,14 +10,74 @@ A tiny password‑gated site to upload a Kindle `vocab.db`, pick a book, choose 
 - One‑click download of `.apkg`
 - Auto‑cleanup of old uploads/outputs
 
-## Quick deploy with Portainer
-1. **Create a new Stack** → *Web editor*.
-2. Paste the contents of `docker-compose.yml`.
-3. Add an **Environment variable** in the stack editor: `APP_PASSWORD` (required).
-4. **Deploy the Stack**.
-5. Visit `http://<your-host>:8080` (or behind your reverse proxy/domain).
+## During development I used these commands:
+1. `docker compose build --no-cache`
+2. `docker compose up -d`
+3. After another update, `docker compose down`, and back to step 1
 
-> To change the port, edit `ports:` or set `PORT` env.
+## Quick deploy with Portainer
+1. This:
+
+```
+marek@raspberrypi5:~/docker/kindleToAnki/server $ docker build -t kindle_to_anki:1.0.0 .
+[+] Building 0.9s (14/14) FINISHED                                                              docker:default
+ => [internal] load build definition from Dockerfile                                                      0.0s
+ => => transferring dockerfile: 653B                                                                      0.0s
+ => [internal] load metadata for docker.io/library/node:20-alpine                                         0.8s
+ => [internal] load .dockerignore                                                                         0.0s
+ => => transferring context: 76B                                                                          0.0s
+ => [internal] load build context                                                                         0.0s
+ => => transferring context: 289B                                                                         0.0s
+ => [build 1/7] FROM docker.io/library/node:20-alpine@sha256:df02558528d3d3d0d621f112e232611aecfee7cbc65  0.0s
+ => CACHED [build 2/7] WORKDIR /app                                                                       0.0s
+ => CACHED [runtime 3/4] RUN apk add --no-cache sqlite-libs                                               0.0s
+ => CACHED [build 3/7] RUN apk add --no-cache python3 make g++ sqlite-dev                                 0.0s
+ => CACHED [build 4/7] COPY package*.json ./                                                              0.0s
+ => CACHED [build 5/7] RUN npm install --omit=dev                                                         0.0s
+ => CACHED [build 6/7] COPY src ./src                                                                     0.0s
+ => CACHED [build 7/7] COPY public ./public                                                               0.0s
+ => CACHED [runtime 4/4] COPY --from=build /app /app                                                      0.0s
+ => exporting to image                                                                                    0.0s
+ => => exporting layers                                                                                   0.0s
+ => => writing image sha256:816d2c015213d31969520ac71754e521fcb53e7b03b8a56f5e10795af273ef5c              0.0s
+ => => naming to docker.io/library/kindle_to_anki:1.0.0
+ ```
+2. 1.0.0 is the latest version so far
+3. After that I created new stack in portainer:
+
+With this dockerfile:
+
+```
+version: "3.9"
+services:
+  app:
+    image: docker.io/library/kindle_to_anki:1.0.0
+    container_name: kindle-vocab-to-anki
+    environment:
+      - TZ=Europe/Bratislava
+      - APP_PASSWORD=${APP_PASSWORD}
+      - PORT=8080
+      - MAX_UPLOAD_MB=50
+      - CLEANUP_MINUTES=60
+    ports:
+      - "880:8080"
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+    # If you prefer pulling from a registry, build once and push your image, then replace `build:` with `image:` only.
+volumes:
+  data:
+```
+
+and this .env:
+
+```
+APP_PASSWORD=marekanki
+MAX_UPLOAD_MB=50
+CLEANUP_MINUTES=60
+TZ=Europe/Bratislava
+```
+
 
 ## Environment variables
 - `APP_PASSWORD` *(required)* — password needed to upload & download.
@@ -26,15 +86,5 @@ A tiny password‑gated site to upload a Kindle `vocab.db`, pick a book, choose 
 - `CLEANUP_MINUTES` *(default 60)* — TTL for temporary files.
 - `TZ` — timezone for logs.
 
-## Reverse proxy / TLS
-Put this behind Caddy/Traefik/Nginx for HTTPS. Only the single container is needed.
-
 ## Notes on Cambridge scraping
 Scraping is **best‑effort** and may break if the site changes or rate‑limits. You can disable it with the *Disable Cambridge scrape* checkbox.
-
-## Local dev
-```bash
-cd server
-npm ci
-APP_PASSWORD=devpass node src/server.js
-# open http://localhost:8080
