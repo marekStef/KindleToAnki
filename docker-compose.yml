@@ -12,7 +12,7 @@ services:
       - MAX_UPLOAD_MB=50
       - CLEANUP_MINUTES=60
     ports:
-      - "88:8080"
+      - "880:8080"
     volumes:
       - /home/marek/docker/kindleToAnki/data:/app/data
     restart: unless-stopped
