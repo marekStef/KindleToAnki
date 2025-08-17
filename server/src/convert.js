@@ -57,31 +57,53 @@ async function fetchHtml(url, tries = 3) {
 }
 
 async function scrapeCambridgeMarkdown(word) {
-  const URL = BASE + encodeURIComponent(String(word || "").toLowerCase());
+  const URL  = BASE + encodeURIComponent(String(word || "").toLowerCase());
   const html = await fetchHtml(URL);
-  const $ = cheerioLoad(html);
+  const $    = cheerioLoad(html);
+
+  /** helper -------------------------------------------------------------- */
+  const clean      = (t) => (t || "").replace(/\s+/g, " ").trim();
+  const mdEscape   = (s) => (s || "").replace(/([_*`~])/g, "\\$1");
+  const absUrl     = (h) => h && h.startsWith("/") ? "https://dictionary.cambridge.org" + h : h;
+
+  function extractDefBlock($block) {
+    const level = clean($block.find(".ddef_h .def-info").text());
+    const def   = clean($block.find(".ddef_h .def.ddef_d.db").text());
+    if (!def) return null;
+
+    const examples = [];
+    $block.find(".def-body.ddef_b .examp.dexamp").each((_, exWrap) => {
+      const lu   = clean($(exWrap).find(".lu.dlu").text());
+      const sent = clean($(exWrap).find(".eg.deg").text());
+      if (sent) examples.push(lu ? `**${mdEscape(lu)}** — ${mdEscape(sent)}` : mdEscape(sent));
+    });
+    return { def, level: level || null, examples };
+  }
+
+  /** --------------------------------------------------------------------- */
+
   const out = [];
   out.push(`# ${mdEscape(word)} — Cambridge Dictionary`);
   out.push(`*Source:* ${URL}`);
   out.push("");
 
   $(".entry-body__el").each((_, el) => {
-    const $el = $(el);
-    const headword = clean($el.find(".pos-header.dpos-h .headword .hw").text()) || word;
-    const pos = clean($el.find(".pos-header.dpos-h .pos.dpos").text());
-    if (headword || pos) {
-      out.push(`## ${mdEscape(headword)}${pos ? ` — *${mdEscape(pos)}*` : ""}`);
+    const $el   = $(el);
+    const head  = clean($el.find(".pos-header.dpos-h .headword .hw").text()) || word;
+    const pos   = clean($el.find(".pos-header.dpos-h .pos.dpos").text());
+    if (head || pos) {
+      out.push(`## ${mdEscape(head)}${pos ? ` — *${mdEscape(pos)}*` : ""}`);
       out.push("");
     }
 
+    /* 1️⃣  Meanings ------------------------------------------------------ */
     const senses = [];
-    $el
-      .find(".def-block.ddef_block")
-      .filter((_, b) => $(b).closest(".dphrase-block").length === 0)
-      .each((_, b) => {
-        const data = extractDefBlock($, $(b));
-        if (data) senses.push(data);
-      });
+    $el.find(".def-block.ddef_block")
+       .filter((_, b) => $(b).closest(".dphrase-block").length === 0)
+       .each((_, b) => {
+          const d = extractDefBlock($(b));
+          if (d) senses.push(d);
+       });
 
     if (senses.length) {
       out.push(`### Meanings`);
@@ -93,14 +115,14 @@ async function scrapeCambridgeMarkdown(word) {
       out.push("");
     }
 
-    const phraseBlocks = $el.find(".dphrase-block");
-    phraseBlocks.each((_, pb) => {
-      const $pb = $(pb);
-      const title = clean($pb.find(".phrase-head .phrase-title").text());
-      const items = [];
-      $pb.find(".phrase-body .def-block.ddef_block").each((_, b) => {
-        const data = extractDefBlock($, $(b));
-        if (data) items.push(data);
+    /* 2️⃣  Phrasal / Idioms -------------------------------------------- */
+    $el.find(".dphrase-block").each((_, b) => {
+      const $b     = $(b);
+      const title  = clean($b.find(".phrase-head .phrase-title").text());
+      const items  = [];
+      $b.find(".phrase-body .def-block.ddef_block").each((_, d) => {
+        const dblk = extractDefBlock($(d));
+        if (dblk) items.push(dblk);
       });
       if (!title || !items.length) return;
 
@@ -111,18 +133,77 @@ async function scrapeCambridgeMarkdown(word) {
         it.examples.forEach((e) => out.push(`  - _${mdEscape(e)}_`));
       });
 
-      const seeMore = $pb.find(".dbtn a.hbtn.hbtn-tab").attr("href");
-      if (seeMore) out.push(`> See more: ${seeMore}`);
+      const seeMore = $b.find(".dbtn a.hbtn.hbtn-tab").attr("href");
+      if (seeMore) out.push(`> See more: ${absUrl(seeMore)}`);
       out.push("");
     });
+
+    /* 3️⃣  NEW — SMART Vocabulary box ---------------------------------- */
+    $el.find(".smartt.daccord section").each((_, sec) => {
+      const $sec   = $(sec);
+      const topic  = clean($sec.find(".daccord_lt a").first().text());
+      const links  = [];
+
+      $sec.find(".daccord_lb li a").each((_, a) => {
+        const $a   = $(a);
+        const text = clean($a.find(".phrase, .base").text() || $a.text());
+        const href = absUrl($a.attr("href"));
+        if (text && href) links.push({ text, href });
+      });
+
+      if (!topic || !links.length) return;
+      out.push(`### SMART Vocabulary ▸ *${mdEscape(topic)}*`);
+      links.forEach(({ text, href }) =>
+        out.push(`- [${mdEscape(text)}](${href})`));
+      out.push("");
+    });
+
+    /* 4️⃣  Idioms & phrases  (sidebar + accordion) ---------------------- */
+    const idiomLinks = [];
+    const seen = new Set();                       // ↓ simple helper
+    const add = (text, href) => {
+      if (!text || !href) return;
+      const key = text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      idiomLinks.push({ text, href });
+    };
+
+    const grabText = ($a) => {
+      const phrase = clean($a.find(".phrase").first().text());
+      const base   = clean($a.find(".base").first().text());
+      return phrase || base || clean($a.text());
+    };
+
+    /*  4.a sidebar (“Idioms”) */
+    $(".xref.idioms a").each((_, a) => add(grabText($(a)), absUrl($(a).attr("href"))));
+
+    /*  4.b accordion (“Idioms and phrases”) */
+    $("header:contains('Idioms and phrases')")
+      .next("div")
+      .find("a")
+      .each((_, a) => add(grabText($(a)), absUrl($(a).attr("href"))));
+
+    if (idiomLinks.length) {
+      out.push(
+        `<div style="background:#FFF6CC;padding:8px 10px;border-left:4px solid #F7B500;margin:12px 0">`
+      );
+      out.push(
+        `<div style="font-weight:bold;color: #F7B500;font-size:1.05em;margin-bottom:4px">Idioms&nbsp;and&nbsp;phrases</div>`
+      );
+      idiomLinks.forEach(({ text, href }) =>
+        out.push(`<br>• <a href="${href}">${escapeHtml(text)}</a>`)
+      );
+      out.push(`</div>`, "");
+    }
   });
 
   if (out.length <= 3) {
     out.push("_No content found. Structure may have changed._");
   }
-
   return out.join("\n");
 }
+
 
 function openDb(dbPath) {
   const db = new Database(dbPath, { readonly: true });
