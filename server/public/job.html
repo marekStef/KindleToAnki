@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Job</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 14px; }
+    .row { margin: 8px 0; }
+    #bar { width: 100%; height: 10px; background: #eee; border-radius: 6px; overflow: hidden; }
+    #bar > div { height: 100%; width: 0%; background: #4a8df6; transition: width .2s; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <a href="/">← Back</a>
+  <h2 id="h"></h2>
+  <div class="row">Status: <b id="status">loading…</b></div>
+  <div class="row">Deck: <span id="deck" class="mono"></span></div>
+  <div class="row">Started: <span id="started"></span></div>
+  <div class="row">Ended: <span id="ended"></span></div>
+  <div class="row">Progress: <span id="prog">0 / 0 (0%)</span></div>
+  <div id="bar"><div></div></div>
+  <div class="row">Speed: <span id="speed">–</span> items/sec • ETA: <span id="eta">–</span></div>
+  <div class="row"><a id="dl" href="#" download style="display:none">Download .apkg</a></div>
+  <script src="/job.js"></script>
+</body>
+</html>

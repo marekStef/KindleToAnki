@@ -7,6 +7,11 @@ function msg(el, text, isErr = false) {
   el.classList.toggle("err", !!isErr);
 }
 
+// persist/reuse password locally (so /job/:id can reconnect SSE)
+function savePw(pw){ try{ localStorage.setItem("kvta_pw", pw); }catch{} }
+function loadPw(){ try{ return localStorage.getItem("kvta_pw") || ""; }catch{ return ""; } }
+
+
 $("uploadBtn").addEventListener("click", async () => {
   const pw = $("pw").value.trim();
   const file = $("file").files[0];
@@ -14,6 +19,7 @@ $("uploadBtn").addEventListener("click", async () => {
     msg($("s1msg"), "Password and file are required.", true);
     return;
   }
+  savePw(pw);
 
   const fd = new FormData();
   fd.append("db", file);
@@ -72,6 +78,7 @@ $("buildBtn").addEventListener("click", async () => {
   // ‼️ ignore clicks while a build is already running
   if (building) return;
   const pw = $("pw").value.trim();
+  savePw(pw);
   const bookId = $("book").value;
   const deckName = $("deck").value.trim();
   const perWord = $("perWord").checked;
@@ -79,6 +86,7 @@ $("buildBtn").addEventListener("click", async () => {
   const noScrape = false;
   const includeSmartVocab = $("includeSmart").checked;
   const concurrency = Number($("conc").value || 1);
+  const includeLlm = $("includeLlm").checked;
 
   if (!token) {
     msg($("s2msg"), "No upload token. Upload a vocab.db first.", true);
@@ -100,52 +108,62 @@ $("buildBtn").addEventListener("click", async () => {
         "Content-Type": "application/json",
         "x-app-password": pw
       },
-      body: JSON.stringify({ token, bookId, deckName, perWord, noScrape, concurrency, includeSmartVocab })
+      body: JSON.stringify({
+        token, bookId, deckName, perWord, noScrape, concurrency,
+        includeSmartVocab, includeLlm
+      })
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Conversion failed");
 
     
     
-  // 2️⃣ open SSE stream for live updates
-  const ev = new EventSource(
-    `/api/progress/${data.jobId}?password=${encodeURIComponent(pw)}`
-  );
+     // NEW: take user to the dedicated job screen (/job/:id)
+     window.location.href = data.jobUrl;
 
-  $("pbWrap").classList.remove("hidden");
-  $("pb").value = 0; $("pct").textContent = "0 %";
-  msg($("s2msg"), "Building deck…");
 
-  ev.addEventListener("progress", (e) => {
-    const { done, total } = JSON.parse(e.data);
-    const pct = Math.round((done / total) * 100);
-    $("pb").value = pct; $("pct").textContent = pct + " %";
-  });
-
-  ev.addEventListener("done", (e) => {
-    const { downloadId, fileName } = JSON.parse(e.data);
-    $("pb").value = 100; $("pct").textContent = "100 %";
-
-    const dl = $("dl");
-    dl.href = `/api/download/${downloadId}?password=${encodeURIComponent(pw)}`;
-    dl.download = fileName || "deck.apkg";
-
-    $("step3").classList.remove("hidden");
-    msg($("s2msg"), "Deck ready!");
-    ev.close();
-    building = false; 
-    $("buildBtn").disabled = false;
-  });
-
-  ev.addEventListener("error", (e) => {
-    msg($("s2msg"), "Error: " + e.data, true);
-    ev.close();
-    building = false;
-    $("buildBtn").disabled = false;
-  });
   } catch (e) {
     console.error(e);
     building = false;  
     msg($("s2msg"), e.message || "Conversion failed", true);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Past jobs on the homepage
+// ─────────────────────────────────────────────────────────────────────────────
+(async function loadJobsList(){
+  const pwInput = $("pw");
+  const pw = (pwInput?.value?.trim()) || loadPw();
+  if (!pw) return; // no password yet
+  try {
+    const res = await fetch(`/api/jobs`, {
+      headers: { "x-app-password": pw }
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Failed to load jobs");
+    const tbody = $("jobsTable")?.querySelector("tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    for (const j of data.jobs) {
+      const tr = document.createElement("tr");
+      const started = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
+      const ended = j.endedAt ? new Date(j.endedAt).toLocaleString() : "";
+      const pct = j.total ? Math.round((j.done||0)/j.total*100) : (j.done||0);
+      const jobLink = `<a href="/job/${j.jobId}">open</a>`;
+      const dl = j.downloadUrl ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>` : "";
+      tr.innerHTML = `
+        <td>${(j.bookTitle||"")}</td>
+        <td>${(j.deckName||"")}</td>
+        <td>${j.status}</td>
+        <td>${started}</td>
+        <td>${ended}</td>
+        <td>${(j.total? pct+"%": (j.done||0))}</td>
+        <td>${jobLink}</td>
+        <td>${dl}</td>`;
+      tbody.appendChild(tr);
+    }
+  } catch (e) {
+    const m = $("jobsMsg"); if (m) m.textContent = e.message;
+  }
+})();

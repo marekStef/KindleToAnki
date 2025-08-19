@@ -29,7 +29,7 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Kindle Vocab → Anki (v: 1.0.3)</h1>
+      <h1>Kindle Vocab → Anki (v: 2.0.0)</h1>
       <div class="card">
         <div id="step1">
           <div class="row">
@@ -72,6 +72,11 @@
               Higher values can speed up the process, but the server may get blocked at the Cambridge if set too high.
               </div>
 
+              <label style="display:block;margin-top:6px;">
+                <input type="checkbox" id="includeLlm" />
+                Include LLM explanation at the top of the back side
+              </label>
+
               <label>
                 <input id="includeSmart" type="checkbox" checked />
                 Include <strong>SMART Vocabulary</strong> (from Cambridge)
@@ -103,5 +108,17 @@
         </div>
       </div>
     </div>
+    <section style="margin-top:24px">
+    <h3>Past jobs</h3>
+    <div id="jobsMsg" style="margin:6px 0;color:#666"></div>
+    <table id="jobsTable" border="1" cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th>Book</th><th>Deck</th><th>Status</th><th>Started</th><th>Ended</th><th>Progress</th><th>Link</th><th>Download</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
     <script src="/app.js" type="module"></script>
   </body>

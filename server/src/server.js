@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import { nanoid } from "nanoid";
 import { env, toInt, assert } from "./util.js";
 import { listBooksFromVocab, buildApkg } from "./convert.js";
+import Database from "better-sqlite3";
 
 import { EventEmitter } from "node:events";
 
@@ -32,7 +33,7 @@ function requirePassword(req, res, next) {
 }
 
 const app = express();
-app.set("trust proxy", true);
+// app.set("trust proxy", false);
 app.use(helmet({
   // we're serving plain HTTP, so don't tell browsers to force HTTPS
   hsts: false,
@@ -75,6 +76,67 @@ function checkPassword(req) {
 
 // ---- API ----
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Jobs DB (SQLite) — data/jobs.sqlite
+// ──────────────────────────────────────────────────────────────────────────────
+const jobsDbPath = path.join(dataDir, "jobs.sqlite");
+const jdb = new Database(jobsDbPath);
+jdb.pragma("journal_mode = WAL");
+jdb.exec(`
+  CREATE TABLE IF NOT EXISTS jobs (
+    jobId        TEXT PRIMARY KEY,
+    token        TEXT NOT NULL,
+    bookId       TEXT NOT NULL,
+    bookTitle    TEXT,
+    deckName     TEXT NOT NULL,
+    includeLlm   INTEGER DEFAULT 0,
+    includeSmart INTEGER DEFAULT 1,
+    perWord      INTEGER DEFAULT 0,
+    noScrape     INTEGER DEFAULT 0,
+    concurrency  INTEGER DEFAULT 1,
+    status       TEXT NOT NULL,         -- running | done | error
+    startedAt    INTEGER NOT NULL,
+    endedAt      INTEGER,
+    total        INTEGER,
+    done         INTEGER DEFAULT 0,
+    downloadId   TEXT,
+    fileName     TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_jobs_startedAt ON jobs(startedAt DESC);
+`);
+const sqlInsertJob = jdb.prepare(`
+  INSERT INTO jobs (jobId, token, bookId, bookTitle, deckName, includeLlm, includeSmart,
+                    perWord, noScrape, concurrency, status, startedAt)
+  VALUES (@jobId, @token, @bookId, @bookTitle, @deckName, @includeLlm, @includeSmart,
+          @perWord, @noScrape, @concurrency, 'running', @startedAt)
+`);
+const sqlUpdateProgress = jdb.prepare(
+  `UPDATE jobs SET done=@done, total=COALESCE(total,@total) WHERE jobId=@jobId`
+);
+const sqlFinishJob = jdb.prepare(
+  `UPDATE jobs SET status=@status, endedAt=@endedAt, done=@done, total=@total,
+          downloadId=@downloadId, fileName=@fileName WHERE jobId=@jobId`
+);
+const sqlErrorJob = jdb.prepare(
+  `UPDATE jobs SET status='error', endedAt=@endedAt WHERE jobId=@jobId`
+);
+const sqlGetJob = jdb.prepare(`SELECT * FROM jobs WHERE jobId=?`);
+const sqlListJobs = jdb.prepare(`SELECT * FROM jobs ORDER BY startedAt DESC LIMIT 200`);
+
+function getBookMetaFromVocab(dbPath, bookId) {
+  try {
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare(`SELECT title, authors FROM BOOK_INFO WHERE id = ?`).get(bookId);
+    db.close();
+    if (!row) return { title: "(unknown)" };
+    const t = [row.title, row.authors].filter(Boolean).join(" — ");
+    return { title: t || "(untitled)" };
+  } catch {
+    return { title: "(unknown)" };
+  }
+}
+
+
 // Upload vocab.db, return token + book list
 app.post("/api/upload", requirePassword, upload.single("db"), async (req, res, next) => {
   try {
@@ -104,7 +166,13 @@ app.post("/api/upload", requirePassword, upload.single("db"), async (req, res, n
 app.post("/api/convert", async (req, res, next) => {
   try {
     assert(checkPassword(req), "Unauthorized", 401);
-    const { token, bookId, deckName, perWord, noScrape, concurrency, includeSmartVocab } = req.body || {};
+        const {
+      token, bookId, deckName,
+      perWord, noScrape, concurrency,
+      includeSmartVocab,
+      includeLlm,
+      llmModel // optional (defaults inside convert.js)
+    } = req.body || {};
     assert(token, "Missing token");
     assert(bookId, "Missing bookId");
     assert(deckName, "Missing deckName");
@@ -113,13 +181,25 @@ app.post("/api/convert", async (req, res, next) => {
     const exists = await fs.access(metaPath).then(() => true).catch(() => false);
     assert(exists, "Invalid or expired token");
 
-     const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+    const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+    const { title: bookTitle } = getBookMetaFromVocab(meta.path, bookId);
 
     // ── 1. register a job ───────────────────────────────────────────────────
     const jobId      = nanoid();
     const downloadId = nanoid();              // will name the output file
     const emitter    = new EventEmitter();
     jobs.set(jobId, { emitter, done:false });
+
+        // persist the job (status: running)
+    sqlInsertJob.run({
+      jobId, token, bookId, bookTitle, deckName,
+      includeLlm: includeLlm ? 1 : 0,
+      includeSmart: includeSmartVocab !== false ? 1 : 0,
+      perWord: perWord ? 1 : 0,
+      noScrape: noScrape ? 1 : 0,
+      concurrency: Number(concurrency ?? 1) || 1,
+      startedAt: Date.now()
+    });
 
     // ── 2. fire-and-forget worker ───────────────────────────────────────────
     (async () => {
@@ -132,7 +212,15 @@ app.post("/api/convert", async (req, res, next) => {
           noScrape,
           concurrency,
           includeSmartVocab: includeSmartVocab !== false, // default true
-          onProgress: (p) => emitter.emit("progress", p)
+          includeLlm: !!includeLlm,                       // NEW
+          llmModel,                                       // NEW (optional)
+          onProgress: (p) => {
+            // persist progressive counts (and total on first tick)
+            try {
+              sqlUpdateProgress.run({ jobId, done: p.done ?? 0, total: p.total ?? null });
+            } catch {}
+            emitter.emit("progress", p);
+          }
         });
 
         // 3️⃣ save & mark done
@@ -142,13 +230,27 @@ app.post("/api/convert", async (req, res, next) => {
 
         emitter.emit("done", { downloadId, fileName: safeName });
         Object.assign(jobs.get(jobId), { done:true, downloadId, fileName:safeName });
+
+        // persist completion
+        try {
+          const row = sqlGetJob.get(jobId);
+          sqlFinishJob.run({
+            jobId,
+            status: "done",
+            endedAt: Date.now(),
+            done: row?.total ?? row?.done ?? null,
+            total: row?.total ?? null,
+            downloadId, fileName: safeName
+          });
+        } catch {}
       } catch (err) {
         emitter.emit("error", err.message || String(err));
+        try { sqlErrorJob.run({ jobId, endedAt: Date.now() }); } catch {}
       }
     })();
 
     // ── 4. immediate HTTP response ──────────────────────────────────────────
-    res.json({ ok:true, jobId });
+    res.json({ ok:true, jobId, jobUrl: `/job/${jobId}` });
   } catch (e) {
     next(e);
   }
@@ -172,7 +274,17 @@ app.get("/api/progress/:id", requirePassword, (req, res) => {
   const { emitter, done, downloadId, fileName } = job;
   if (done) send("done", { downloadId, fileName });
 
-  const onProgress = (p) => send("progress", p);
+    const startedAt = (sqlGetJob.get(req.params.id)?.startedAt) || Date.now();
+  const onProgress = (p) => {
+    const now = Date.now();
+    const done = p.done ?? 0;
+    const total = p.total ?? 0;
+    const elapsedMs = now - startedAt;
+    const speed = done && elapsedMs ? (done / (elapsedMs/1000)) : 0; // items/sec
+    const remaining = total > 0 ? Math.max(0, total - done) : 0;
+    const etaMs = speed > 0 ? Math.round((remaining / speed) * 1000) : null;
+    send("progress", { ...p, elapsedMs, etaMs, speed });
+  };
   const onDone     = (d) => { send("done", d); finish(); };
   const onErr      = (e) => { send("error", e); finish(); };
 
@@ -204,6 +316,42 @@ app.get("/api/download/:id", async (req, res, next) => {
     next(e);
   }
 });
+
+// Jobs listing (for homepage “Past jobs”)
+app.get("/api/jobs", async (req, res) => {
+  try {
+    assert(checkPassword(req), "Unauthorized", 401);
+    const rows = sqlListJobs.all().map(r => ({
+      ...r,
+      downloadUrl: r.downloadId ? `/api/download/${r.downloadId}` : null
+    }));
+    res.json({ ok:true, jobs: rows });
+  } catch (e) {
+    res.status(e.status || 500).json({ ok:false, error: e.message });
+  }
+});
+
+// Single job (for /job/:id page header)
+app.get("/api/job/:id", async (req, res) => {
+  try {
+    assert(checkPassword(req), "Unauthorized", 401);
+    const row = sqlGetJob.get(req.params.id);
+    assert(row, "Not found", 404);
+    const out = {
+      ...row,
+      downloadUrl: row.downloadId ? `/api/download/${row.downloadId}` : null
+    };
+    res.json({ ok:true, job: out });
+  } catch (e) {
+    res.status(e.status || 500).json({ ok:false, error: e.message });
+  }
+});
+
+// Serve the job details page for /job/:id
+app.get("/job/:id", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "job.html"));
+});
+
 
 // Simple health
 app.get("/api/health", (req, res) => res.json({ ok: true }));

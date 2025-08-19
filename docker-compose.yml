@@ -3,6 +3,7 @@ services:
   app:
     build:
       context: ./server
+    network_mode: host
     image: kindle-vocab-to-anki:latest
     container_name: kindle-vocab-to-anki
     environment:
@@ -11,9 +12,18 @@ services:
       - PORT=8080
       - MAX_UPLOAD_MB=50
       - CLEANUP_MINUTES=60
-    ports:
-      - "880:8080"
+      - PORT=880
+      - OLLAMA_URL=http://127.0.0.1:11434
+    # ports:
+    #   - "880:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux
     volumes:
+      # ollama client binary (adjust the path if yours differs)
+      - /usr/local/bin/ollama:/usr/local/bin/ollama:ro
+      # optional: share models to avoid re-downloading inside the container
+      - /var/lib/ollama:/root/.ollama
+
       - /home/marek/docker/kindleToAnki/data:/app/data
     restart: unless-stopped
     # If you prefer pulling from a registry, build once and push your image, then replace `build:` with `image:` only.
