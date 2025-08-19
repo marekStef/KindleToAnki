@@ -75,7 +75,9 @@ $("buildBtn").addEventListener("click", async () => {
   const bookId = $("book").value;
   const deckName = $("deck").value.trim();
   const perWord = $("perWord").checked;
-  const noScrape = $("noScrape").checked;
+  // const noScrape = $("noScrape").checked;
+  const noScrape = false;
+  const includeSmartVocab = $("includeSmart").checked;
   const concurrency = Number($("conc").value || 1);
 
   if (!token) {
@@ -98,7 +100,7 @@ $("buildBtn").addEventListener("click", async () => {
         "Content-Type": "application/json",
         "x-app-password": pw
       },
-      body: JSON.stringify({ token, bookId, deckName, perWord, noScrape, concurrency })
+      body: JSON.stringify({ token, bookId, deckName, perWord, noScrape, concurrency, includeSmartVocab })
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Conversion failed");

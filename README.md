@@ -19,7 +19,7 @@ A tiny password‑gated site to upload a Kindle `vocab.db`, pick a book, choose 
 1. This:
 
 ```
-marek@raspberrypi5:~/docker/kindleToAnki/server $ docker build -t kindle_to_anki:1.0.0 .
+marek@raspberrypi5:~/docker/kindleToAnki/server $ docker build -t kindle_to_anki:1.0.2 .
 [+] Building 0.9s (14/14) FINISHED                                                              docker:default
  => [internal] load build definition from Dockerfile                                                      0.0s
  => => transferring dockerfile: 653B                                                                      0.0s
@@ -51,8 +51,8 @@ With this dockerfile:
 version: "3.9"
 services:
   app:
-    image: docker.io/library/kindle_to_anki:1.0.0
-    container_name: kindle-vocab-to-anki
+    image: docker.io/library/kindle_to_anki:1.0.2
+    container_name: kindle-to-anki
     environment:
       - TZ=Europe/Bratislava
       - APP_PASSWORD=${APP_PASSWORD}
@@ -88,3 +88,5 @@ TZ=Europe/Bratislava
 
 ## Notes on Cambridge scraping
 Scraping is **best‑effort** and may break if the site changes or rate‑limits. You can disable it with the *Disable Cambridge scrape* checkbox.
+
+https://chatgpt.com/c/68a232fe-c38c-8333-911c-9fbfb17c3cfa

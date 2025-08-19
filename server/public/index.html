@@ -29,12 +29,12 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Kindle Vocab → Anki (v: 1.0.1)</h1>
+      <h1>Kindle Vocab → Anki (v: 1.0.2)</h1>
       <div class="card">
         <div id="step1">
           <div class="row">
             <label>Access password</label>
-            <input id="pw" type="password" placeholder="Enter password" />
+            <input id="pw" type="password" placeholder="Enter password -> marekanki" />
             <label>Kindle vocab.db</label>
             <input id="file" type="file" accept=".db" />
             <button id="uploadBtn" class="btn">Upload & List Books</button>
@@ -49,13 +49,41 @@
             <select id="book"></select>
             <div class="hint" id="bookStats"></div>
             <label>Deck name</label>
+            <div class="hint">
+              <strong>Why is this important?</strong>  
+              The deck name tells Anki where to put your cards. If you already have a deck with this name, the import will update it instead of creating duplicates. Without a deck name, your cards won’t import correctly.
+            </div>
+
             <input id="deck" type="text" placeholder="e.g., The Great Gatsby" />
+            
             <div class="grid-2">
               <label><input id="perWord" type="checkbox" /> One card per unique word (latest sentence)</label>
               <!-- <label><input id="noScrape" type="checkbox" /> Disable Cambridge scrape</label> -->
             </div>
+            <div class="hint">
+                Anki saves the same word multiple times if it appears in different sentences.
+                This option creates one card per unique word, using the latest sentence it appears in.
+              </div>
+            
             <label>Concurrency (1–8)</label>
             <input id="conc" type="number" min="1" max="8" value="1" />
+            <div class="hint">
+              <strong>Concurrency</strong> controls how many words are scraped at once. 
+              Higher values can speed up the process, but the server may get blocked at the Cambridge if set too high.
+              </div>
+
+              <label>
+                <input id="includeSmart" type="checkbox" checked />
+                Include <strong>SMART Vocabulary</strong> (from Cambridge)
+              </label>
+              <div class="hint">
+                Adds Cambridge’s “SMART Vocabulary” topic lists to the back of each card
+                (curated clusters of related words). Turn this <em>off</em> if you prefer
+                a leaner back side or smaller deck file size.
+              </div>
+              <br />
+
+
             <button id="buildBtn" class="btn">Build .apkg</button>
             <div id="pbWrap" class="hidden">
               <progress id="pb" max="100" value="0"></progress>

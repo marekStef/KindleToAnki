@@ -104,7 +104,7 @@ app.post("/api/upload", requirePassword, upload.single("db"), async (req, res, n
 app.post("/api/convert", async (req, res, next) => {
   try {
     assert(checkPassword(req), "Unauthorized", 401);
-    const { token, bookId, deckName, perWord, noScrape, concurrency } = req.body || {};
+    const { token, bookId, deckName, perWord, noScrape, concurrency, includeSmartVocab } = req.body || {};
     assert(token, "Missing token");
     assert(bookId, "Missing bookId");
     assert(deckName, "Missing deckName");
@@ -131,6 +131,7 @@ app.post("/api/convert", async (req, res, next) => {
           perWord,
           noScrape,
           concurrency,
+          includeSmartVocab: includeSmartVocab !== false, // default true
           onProgress: (p) => emitter.emit("progress", p)
         });
 

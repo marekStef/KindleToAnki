@@ -33,6 +33,15 @@ const COLORS = {
   exampleRing: "rgba(205,233,255,.16)"
 };
 
+const FONT = {
+  basePx: 15,      // global base size on both sides (try 14–16)
+  headingEm: 1.05, // h1/h2/h3 size on the back
+  wordEm: 1.2,     // main word on the front
+  listEm: 0.95,    // meanings list size
+  smallEm: 0.9     // tiny meta (IDs, etc.)
+};
+
+
 
 const H = {
   "User-Agent":
@@ -82,7 +91,7 @@ async function fetchHtml(url, tries = 3) {
   throw lastErr || new Error("fetch failed");
 }
 
-async function scrapeCambridgeMarkdown(word) {
+async function scrapeCambridgeMarkdown(word, { includeSmartVocab = true } = {}) {
   const URL  = BASE + encodeURIComponent(String(word || "").toLowerCase());
   const html = await fetchHtml(URL);
   const $    = cheerioLoad(html);
@@ -178,6 +187,7 @@ async function scrapeCambridgeMarkdown(word) {
     });
 
     /* 3️⃣  SMART Vocabulary box ------------------------------------------- */
+    if (includeSmartVocab) {
     $el.find(".smartt.daccord section").each((_, sec) => {
       const $sec   = $(sec);
       const topic  = clean($sec.find(".daccord_lt a").first().text());
@@ -204,6 +214,7 @@ async function scrapeCambridgeMarkdown(word) {
         ""
       );
     });
+  }
 
 
     /* 4️⃣  Idioms & phrases  (sidebar + accordion) ---------------------- */
@@ -362,6 +373,7 @@ export async function buildApkg({
   perWord = false,
   noScrape = false,
   concurrency = 4,
+  includeSmartVocab = true,
   onProgress = () => {}
 }) {
   // Validate presence
@@ -417,142 +429,116 @@ export async function buildApkg({
       let md = "";
       if (!noScrape) {
         try {
-          md = await scrapeCambridgeMarkdown(word);
+          md = await scrapeCambridgeMarkdown(word, { includeSmartVocab });
         } catch (e) {
           md = `_Error scraping Cambridge for **${mdEscape(word)}**: ${mdEscape(e.message)}_`;
         }
       }
 
       // FRONT: 1) word, 2) exact form (from sentence), 3) usage: sentence, 4) id
-      const frontTitle = `
-      <div style="text-align:left;line-height:1.35">
-        <div style="font-weight:700;font-size:1.35em;margin-bottom:.15em">${escapeHtml(word)}</div>
+      const FRONT_STYLE = `
+        <style>
+          .front { font-size:${FONT.basePx}px; line-height:1.35; text-align:left; }
+          .front .word { font-size:${FONT.wordEm}em; font-weight:700; margin-bottom:.15em; }
+          .front .id { color:#b0bccc; font-size:${FONT.smallEm}em; margin-top:.35em; }
+          .front blockquote{
+            font-size:${FONT.listEm}em; margin:.25em 0; padding:6px 10px;
+            border-left:4px solid ${COLORS.tileBg};
+            background: rgba(14,42,71,.08); border-radius:0 8px 8px 0; font-style:italic;
+          }
+        </style>`;
+
+        const frontTitle = `
+        ${FRONT_STYLE}
+        <div class="front">
+          <div class="word">${escapeHtml(word)}</div>
+          ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
+          <br /><br />
+          <div class="id">${escapeHtml(kindleId)}</div>
+        </div>`.trim();
+
+      // const frontTitle = `
+      // <div style="text-align:left;line-height:1.35">
+      //   <div style="font-weight:700;font-size:1.35em;margin-bottom:.15em">${escapeHtml(word)}</div>
         
-        ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
-        <br /><br />
-        <div style="color:#b0bccc;margin-top:.35em;font-size:.9em">${escapeHtml(kindleId)}</div>
-      </div>`.trim();
+      //   ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
+      //   <br /><br />
+      //   <div style="color:#b0bccc;margin-top:.35em;font-size:.9em">${escapeHtml(kindleId)}</div>
+      // </div>`.trim();
       // ${sentence ? `<div><span style="color:#98a6b5">usage:</span> ${escapeHtml(sentence)}</div>` : ""}
 
       // BACK: styled with constants (tiles/headers, meanings, examples get different colors)
       const style = `
-      <style>
-        .anki {
-          --tile-bg:${COLORS.tileBg};
-          --tile-text:${COLORS.tileText};
-          --tile-border:${COLORS.tileBorder};
-          --meaning-bg:${COLORS.meaningBg};
-          --meaning-text:${COLORS.meaningText};
-          --meaning-ring:${COLORS.meaningRing};
-          --example-bg:${COLORS.exampleBg};
-          --example-text:${COLORS.exampleText};
-          --example-ring:${COLORS.exampleRing};
-        }
-        .anki h1, .anki h2, .anki h3 {
-          background: var(--tile-bg);
-          color: var(--tile-text);
-          padding: 6px 10px;
-          border-left: 4px solid var(--tile-text);
-          border-radius: 8px;
-          margin: 10px 0 8px 0;
-          box-shadow: 0 1px 0 0 var(--tile-border) inset;
-        }
-        .anki ul { list-style: none; padding-left: 0; margin: 6px 0; }
-        .anki ul > li {
-          background: var(--meaning-bg);
-          color: var(--meaning-text);
-          padding: 8px 10px;
-          border-radius: 10px;
-          margin: 6px 0;
-          box-shadow: 0 0 0 1px var(--meaning-ring) inset;
-        }
-        .anki ul > li > ul { margin-top: 6px; }
-        .anki ul > li > ul > li {
-          background: var(--example-bg);
-          color: var(--example-text);
-          padding: 6px 8px;
-          border-radius: 8px;
-          margin: 6px 0 0 0;
-          box-shadow: 0 0 0 1px var(--example-ring) inset;
-        }
-        .anki blockquote {
-          margin: 0 0 10px 0; padding: 8px 10px;
-          border-left: 4px solid var(--tile-bg);
-          background: rgba(14,42,71,.08);
-          border-radius: 0 8px 8px 0;
-          font-style: italic;
-        }
-        .anki hr { border: 0; height: 1px; background: var(--tile-border); margin: 10px 0; }
-        .anki a { color: #a7d1ff; text-decoration: none; }
-        .anki a:hover { text-decoration: underline; }
+<style>
+  .anki {
+    --tile-bg:${COLORS.tileBg};
+    --tile-text:${COLORS.tileText};
+    --tile-border:${COLORS.tileBorder};
+    --meaning-bg:${COLORS.meaningBg};
+    --meaning-text:${COLORS.meaningText};
+    --meaning-ring:${COLORS.meaningRing};
+    --example-bg:${COLORS.exampleBg};
+    --example-text:${COLORS.exampleText};
+    --example-ring:${COLORS.exampleRing};
+    font-size:${FONT.basePx}px;            /* ↓ global shrink */
+    line-height:1.4;
+  }
+  .anki h1, .anki h2, .anki h3 {
+    font-size:${FONT.headingEm}em;         /* smaller headings */
+    background: var(--tile-bg);
+    color: var(--tile-text);
+    padding: 6px 10px;
+    border-left: 4px solid var(--tile-text);
+    border-radius: 8px;
+    margin: 10px 0 8px 0;
+    box-shadow: 0 1px 0 0 var(--tile-border) inset;
+  }
+  .anki ul { list-style: none; padding-left: 0; margin: 6px 0; }
+  .anki ul > li {
+    font-size:${FONT.listEm}em;            /* meanings smaller */
+    background: var(--meaning-bg);
+    color: var(--meaning-text);
+    padding: 8px 10px;
+    border-radius: 10px;
+    margin: 6px 0;
+    box-shadow: 0 0 0 1px var(--meaning-ring) inset;
+  }
+  .anki ul > li > ul { margin-top: 6px; }
+  .anki ul > li > ul > li {
+    font-size:${FONT.smallEm}em;           /* examples smallest */
+    background: var(--example-bg);
+    color: var(--example-text);
+    padding: 6px 8px;
+    border-radius: 8px;
+    margin: 6px 0 0 0;
+    box-shadow: 0 0 0 1px var(--example-ring) inset;
+  }
+  .anki blockquote {
+    font-size:${FONT.listEm}em;
+    margin: 0 0 10px 0; padding: 8px 10px;
+    border-left: 4px solid var(--tile-bg);
+    background: rgba(14,42,71,.08);
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+  }
+  .anki hr { border: 0; height: 1px; background: var(--tile-border); margin: 10px 0; }
+  .anki a { color: #a7d1ff; text-decoration: none; }
+  .anki a:hover { text-decoration: underline; }
 
-        /* SMART Vocabulary — faint gray card */
-        .anki .smart-vocab{
-          background: #f0f2f4;
-          color: #5f6b76;
-          padding: 8px 10px;
-          margin: 10px 0;
-          border-radius: 8px;
-        }
-        .anki .smart-vocab .smart-title{
-          font-weight: 600;
-          font-size: .95em;
-          color: #6b7680;
-          margin-bottom: 6px;
-        }
-        .anki .smart-vocab ul{
-          list-style: none;
-          margin: 0;
-          padding: 0;
-        }
-        .anki .smart-vocab li{
-          background: #e6eaee;
-          color: #4a5560;
-          border-radius: 8px;
-          padding: 6px 10px;
-          margin: 6px 0;
-        }
-        .anki .smart-vocab a{
-          color: #3b6ea8;
-          text-decoration: none;
-        }
-        .anki .smart-vocab a:hover{
-          text-decoration: underline;
-        }
+  /* SMART Vocabulary */
+  .anki .smart-vocab{ font-size:${FONT.listEm}em; background: #f0f2f4; color: #5f6b76; padding: 8px 10px; margin: 10px 0; border-radius: 8px; }
+  .anki .smart-vocab .smart-title{ font-weight: 600; font-size: .95em; color: #6b7680; margin-bottom: 6px; }
+  .anki .smart-vocab ul{ list-style: none; margin: 0; padding: 0; }
+  .anki .smart-vocab li{ background: #e6eaee; color: #4a5560; border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
 
-        /* Phrasal / Idioms — soft blue card */
-        .anki .phrasal-vocab {
-          background: #e8f3ff;
-          color: #2f4a67;
-          padding: 8px 10px;
-          margin: 10px 0;
-          border-radius: 8px;
-        }
-        .anki .phrasal-vocab .phrasal-title {
-          font-weight: 600;
-          font-size: .95em;
-          color: #2a5887;
-          margin-bottom: 6px;
-        }
-        .anki .phrasal-vocab ul {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-        }
-        .anki .phrasal-vocab li {
-          background: #d6e9ff;
-          color: #243b54;
-          border-radius: 8px;
-          padding: 6px 10px;
-          margin: 6px 0;
-        }
-        .anki .phrasal-vocab li.example {
-          background: #c6ddf9;
-          font-style: italic;
-        }
+  /* Phrasal / Idioms */
+  .anki .phrasal-vocab { font-size:${FONT.listEm}em; background: #e8f3ff; color: #2f4a67; padding: 8px 10px; margin: 10px 0; border-radius: 8px; }
+  .anki .phrasal-vocab .phrasal-title { font-weight: 600; font-size: .95em; color: #2a5887; margin-bottom: 6px; }
+  .anki .phrasal-vocab ul { list-style: none; margin: 0; padding: 0; }
+  .anki .phrasal-vocab li { background: #d6e9ff; color: #243b54; border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+  .anki .phrasal-vocab li.example { background: #c6ddf9; font-style: italic; }
+</style>`;
 
-
-      </style>`;
 
       const backHtml = `
       <div class="anki" style="text-align:left">
