@@ -8,6 +8,32 @@ import AnkiExport from "@steve2955/anki-apkg-export";
 import { load as cheerioLoad } from "cheerio";
 import { marked } from "marked";
 
+// --- NEW: helpers & color constants ---
+const escapeRegExp = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function findWordFormInSentence(word = "", sentence = "") {
+  if (!word || !sentence) return "";
+  const re = new RegExp(`\\b(${escapeRegExp(word)})\\b`, "i");
+  const m = sentence.match(re);
+  return m ? m[0] : "";
+}
+
+// Colors for the BACK side (headers/tiles, meanings, examples)
+const COLORS = {
+  tileBg:      "#0E2A47",
+  tileText:    "#E6F1FF",
+  tileBorder:  "rgba(255,255,255,0.12)",
+
+  meaningBg:   "#1B3B5F",
+  meaningText: "#EAF4FF",
+  meaningRing: "rgba(230,241,255,.18)",
+
+  exampleBg:   "#112D3A",
+  exampleText: "#CDE9FF",
+  exampleRing: "rgba(205,233,255,.16)"
+};
+
+
 const H = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
@@ -106,7 +132,7 @@ async function scrapeCambridgeMarkdown(word) {
        });
 
     if (senses.length) {
-      out.push(`### Meanings`);
+      // out.push(`### Meanings`);
       senses.forEach((s) => {
         const badge = s.level && s.level.length <= 5 ? ` **[${s.level}]**` : "";
         out.push(`- **${mdEscape(s.def)}**${badge}`);
@@ -126,19 +152,32 @@ async function scrapeCambridgeMarkdown(word) {
       });
       if (!title || !items.length) return;
 
-      out.push(`### Phrase ▸ **${mdEscape(title)}**`);
-      items.forEach((it) => {
-        const badge = it.level && it.level.length <= 5 ? ` **[${it.level}]**` : "";
-        out.push(`- **${mdEscape(it.def)}**${badge}`);
-        it.examples.forEach((e) => out.push(`  - _${mdEscape(e)}_`));
-      });
+      // out.push(`### Phrase ▸ **${mdEscape(title)}**`);
+      // items.forEach((it) => {
+      //   const badge = it.level && it.level.length <= 5 ? ` **[${it.level}]**` : "";
+      //   out.push(`- **${mdEscape(it.def)}**${badge}`);
+      //   it.examples.forEach((e) => out.push(`  - _${mdEscape(e)}_`));
+      // });
+      out.push(
+        `<div class="phrasal-vocab">` +
+          `<div class="phrasal-title">Phrase ▸ <strong>${escapeHtml(title)}</strong></div>` +
+          `<ul>` +
+            items.map((it) => {
+              const badge = it.level && it.level.length <= 5 ? ` <span class="level">[${escapeHtml(it.level)}]</span>` : "";
+              const examples = it.examples.map((e) => `<li class="example">${escapeHtml(e)}</li>`).join("");
+              return `<li>${escapeHtml(it.def)}${badge}${examples ? `<ul>${examples}</ul>` : ""}</li>`;
+            }).join("") +
+          `</ul>` +
+        `</div>`,
+        ""
+      );
 
       const seeMore = $b.find(".dbtn a.hbtn.hbtn-tab").attr("href");
       if (seeMore) out.push(`> See more: ${absUrl(seeMore)}`);
       out.push("");
     });
 
-    /* 3️⃣  NEW — SMART Vocabulary box ---------------------------------- */
+    /* 3️⃣  SMART Vocabulary box ------------------------------------------- */
     $el.find(".smartt.daccord section").each((_, sec) => {
       const $sec   = $(sec);
       const topic  = clean($sec.find(".daccord_lt a").first().text());
@@ -152,11 +191,20 @@ async function scrapeCambridgeMarkdown(word) {
       });
 
       if (!topic || !links.length) return;
-      out.push(`### SMART Vocabulary ▸ *${mdEscape(topic)}*`);
-      links.forEach(({ text, href }) =>
-        out.push(`- [${mdEscape(text)}](${href})`));
-      out.push("");
+      // Render as a self-contained HTML block so we can style it reliably.
+      out.push(
+        `<div class="smart-vocab">` +
+          `<div class="smart-title">SMART Vocabulary ▸ <em>${escapeHtml(topic)}</em></div>` +
+          `<ul>` +
+            links.map(({ text, href }) =>
+              `<li><a href="${href}">${escapeHtml(text)}</a></li>`
+            ).join("") +
+          `</ul>` +
+        `</div>`,
+        ""
+      );
     });
+
 
     /* 4️⃣  Idioms & phrases  (sidebar + accordion) ---------------------- */
     const idiomLinks = [];
@@ -329,12 +377,42 @@ export async function buildApkg({
     let done = 0;
     const total = rows.length;
 
+    // const tasks = rows.map((row) => async () => {
+    //   const word = clean(row.word || "");
+    //   const sentence = clean(row.sentence || "");
+    //   if (!word) return;
+    //   const kindleId = String(row.kindle_id || "").trim() || "(no id)";
+    //   const frontTitle = `<span style="font-weight: bold">${escapeHtml(word)}</span><br><span style="color:#ccc">${escapeHtml(kindleId)}</span>`;
+
+    //   let md = "";
+    //   if (!noScrape) {
+    //     try {
+    //       md = await scrapeCambridgeMarkdown(word);
+    //     } catch (e) {
+    //       md = `_Error scraping Cambridge for **${mdEscape(word)}**: ${mdEscape(e.message)}_`;
+    //     }
+    //   }
+
+    //   const backHtml = `
+    //   <div style="text-align:left">
+    //     ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
+    //     ${noScrape ? "" : "<hr />"}
+    //     ${noScrape ? "" : marked.parse(md)}
+    //   </div>
+    //   `;
+
+    //   apkg.addCard(frontTitle, backHtml);
+
+    //   done += 1;
+    //   onProgress({ done, total });
+    // });
     const tasks = rows.map((row) => async () => {
       const word = clean(row.word || "");
       const sentence = clean(row.sentence || "");
       if (!word) return;
+
       const kindleId = String(row.kindle_id || "").trim() || "(no id)";
-      const frontTitle = `<span style="font-weight: bold">${escapeHtml(word)}</span><br><span style="color:#ccc">${escapeHtml(kindleId)}</span>`;
+      const surfaceForm = findWordFormInSentence(word, sentence) || word; // exact form from sentence if found
 
       let md = "";
       if (!noScrape) {
@@ -345,11 +423,142 @@ export async function buildApkg({
         }
       }
 
+      // FRONT: 1) word, 2) exact form (from sentence), 3) usage: sentence, 4) id
+      const frontTitle = `
+      <div style="text-align:left;line-height:1.35">
+        <div style="font-weight:700;font-size:1.35em;margin-bottom:.15em">${escapeHtml(word)}</div>
+        
+        ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
+        <br /><br />
+        <div style="color:#b0bccc;margin-top:.35em;font-size:.9em">${escapeHtml(kindleId)}</div>
+      </div>`.trim();
+      // ${sentence ? `<div><span style="color:#98a6b5">usage:</span> ${escapeHtml(sentence)}</div>` : ""}
+
+      // BACK: styled with constants (tiles/headers, meanings, examples get different colors)
+      const style = `
+      <style>
+        .anki {
+          --tile-bg:${COLORS.tileBg};
+          --tile-text:${COLORS.tileText};
+          --tile-border:${COLORS.tileBorder};
+          --meaning-bg:${COLORS.meaningBg};
+          --meaning-text:${COLORS.meaningText};
+          --meaning-ring:${COLORS.meaningRing};
+          --example-bg:${COLORS.exampleBg};
+          --example-text:${COLORS.exampleText};
+          --example-ring:${COLORS.exampleRing};
+        }
+        .anki h1, .anki h2, .anki h3 {
+          background: var(--tile-bg);
+          color: var(--tile-text);
+          padding: 6px 10px;
+          border-left: 4px solid var(--tile-text);
+          border-radius: 8px;
+          margin: 10px 0 8px 0;
+          box-shadow: 0 1px 0 0 var(--tile-border) inset;
+        }
+        .anki ul { list-style: none; padding-left: 0; margin: 6px 0; }
+        .anki ul > li {
+          background: var(--meaning-bg);
+          color: var(--meaning-text);
+          padding: 8px 10px;
+          border-radius: 10px;
+          margin: 6px 0;
+          box-shadow: 0 0 0 1px var(--meaning-ring) inset;
+        }
+        .anki ul > li > ul { margin-top: 6px; }
+        .anki ul > li > ul > li {
+          background: var(--example-bg);
+          color: var(--example-text);
+          padding: 6px 8px;
+          border-radius: 8px;
+          margin: 6px 0 0 0;
+          box-shadow: 0 0 0 1px var(--example-ring) inset;
+        }
+        .anki blockquote {
+          margin: 0 0 10px 0; padding: 8px 10px;
+          border-left: 4px solid var(--tile-bg);
+          background: rgba(14,42,71,.08);
+          border-radius: 0 8px 8px 0;
+          font-style: italic;
+        }
+        .anki hr { border: 0; height: 1px; background: var(--tile-border); margin: 10px 0; }
+        .anki a { color: #a7d1ff; text-decoration: none; }
+        .anki a:hover { text-decoration: underline; }
+
+        /* SMART Vocabulary — faint gray card */
+        .anki .smart-vocab{
+          background: #f0f2f4;
+          color: #5f6b76;
+          padding: 8px 10px;
+          margin: 10px 0;
+          border-radius: 8px;
+        }
+        .anki .smart-vocab .smart-title{
+          font-weight: 600;
+          font-size: .95em;
+          color: #6b7680;
+          margin-bottom: 6px;
+        }
+        .anki .smart-vocab ul{
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+        .anki .smart-vocab li{
+          background: #e6eaee;
+          color: #4a5560;
+          border-radius: 8px;
+          padding: 6px 10px;
+          margin: 6px 0;
+        }
+        .anki .smart-vocab a{
+          color: #3b6ea8;
+          text-decoration: none;
+        }
+        .anki .smart-vocab a:hover{
+          text-decoration: underline;
+        }
+
+        /* Phrasal / Idioms — soft blue card */
+        .anki .phrasal-vocab {
+          background: #e8f3ff;
+          color: #2f4a67;
+          padding: 8px 10px;
+          margin: 10px 0;
+          border-radius: 8px;
+        }
+        .anki .phrasal-vocab .phrasal-title {
+          font-weight: 600;
+          font-size: .95em;
+          color: #2a5887;
+          margin-bottom: 6px;
+        }
+        .anki .phrasal-vocab ul {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+        .anki .phrasal-vocab li {
+          background: #d6e9ff;
+          color: #243b54;
+          border-radius: 8px;
+          padding: 6px 10px;
+          margin: 6px 0;
+        }
+        .anki .phrasal-vocab li.example {
+          background: #c6ddf9;
+          font-style: italic;
+        }
+
+
+      </style>`;
+
       const backHtml = `
-      <div style="text-align:left">
+      <div class="anki" style="text-align:left">
         ${sentence ? `<blockquote>${escapeHtml(sentence)}</blockquote>` : ""}
         ${noScrape ? "" : "<hr />"}
-        ${noScrape ? "" : marked.parse(md)}
+        ${noScrape ? "" : style + marked.parse(md)}
       </div>
       `;
 
@@ -358,6 +567,7 @@ export async function buildApkg({
       done += 1;
       onProgress({ done, total });
     });
+
 
     await Promise.all(tasks.map((t) => limit(t)));
 
