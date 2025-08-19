@@ -2,7 +2,19 @@
   const id = window.location.pathname.split("/").pop();
   const pw = (localStorage.getItem("kvta_pw") || "").trim();
 
+  
+
   const el = (id)=>document.getElementById(id);
+
+  el("cancelBtn").addEventListener("click", async () => {
+  if (!confirm("Really stop this job?")) return;
+  const r = await fetch(`/api/job/${id}/cancel`, {
+    method: "POST",
+    headers: { "x-app-password": pw }
+  }).then(r => r.json());
+  if (!r.ok) alert(r.error || "Failed");
+});
+
 
   function fmtDate(ms){ return ms ? new Date(ms).toLocaleString() : ""; }
   function fmtEta(ms){
@@ -46,6 +58,7 @@
     el("speed").textContent = (p.speed || 0).toFixed(2);
     el("eta").textContent = fmtEta(p.etaMs);
   });
+
   ev.addEventListener("done", (e) => {
     const { downloadId, fileName } = JSON.parse(e.data);
     el("status").textContent = "done";
@@ -62,4 +75,15 @@
     el("status").textContent = "error";
     ev.close();
   });
+  ev.addEventListener("cancelled", () => {
+  el("status").textContent = "cancelled";
+  ev.close();
+
+  function hideCancel(){ el("cancelBtn").style.display="none"; }
+ev.addEventListener("done", hideCancel);
+ev.addEventListener("cancelled", hideCancel);
+ev.addEventListener("error", hideCancel);
+
+});
+
 })();

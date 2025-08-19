@@ -94,7 +94,7 @@ jdb.exec(`
     perWord      INTEGER DEFAULT 0,
     noScrape     INTEGER DEFAULT 0,
     concurrency  INTEGER DEFAULT 1,
-    status       TEXT NOT NULL,         -- running | done | error
+    status       TEXT NOT NULL,         -- running | done | cancelled | error
     startedAt    INTEGER NOT NULL,
     endedAt      INTEGER,
     total        INTEGER,
@@ -122,6 +122,10 @@ const sqlErrorJob = jdb.prepare(
 );
 const sqlGetJob = jdb.prepare(`SELECT * FROM jobs WHERE jobId=?`);
 const sqlListJobs = jdb.prepare(`SELECT * FROM jobs ORDER BY startedAt DESC LIMIT 200`);
+
+const sqlCancelJob = jdb.prepare(
+  `UPDATE jobs SET status='cancelled', endedAt=@endedAt WHERE jobId=@jobId`
+);
 
 function getBookMetaFromVocab(dbPath, bookId) {
   try {
@@ -188,7 +192,7 @@ app.post("/api/convert", async (req, res, next) => {
     const jobId      = nanoid();
     const downloadId = nanoid();              // will name the output file
     const emitter    = new EventEmitter();
-    jobs.set(jobId, { emitter, done:false });
+    jobs.set(jobId, { emitter, done:false, cancelled:false });
 
         // persist the job (status: running)
     sqlInsertJob.run({
@@ -220,7 +224,8 @@ app.post("/api/convert", async (req, res, next) => {
               sqlUpdateProgress.run({ jobId, done: p.done ?? 0, total: p.total ?? null });
             } catch {}
             emitter.emit("progress", p);
-          }
+          },
+          emitter
         });
 
         // 3️⃣ save & mark done
@@ -244,6 +249,11 @@ app.post("/api/convert", async (req, res, next) => {
           });
         } catch {}
       } catch (err) {
+        if (err.message === "__CANCELLED__") {
+          emitter.emit("cancelled");
+          sqlCancelJob.run({ jobId, endedAt:Date.now() });
+          return;                          // ↩ no “error” status
+        }
         emitter.emit("error", err.message || String(err));
         try { sqlErrorJob.run({ jobId, endedAt: Date.now() }); } catch {}
       }
@@ -287,11 +297,13 @@ app.get("/api/progress/:id", requirePassword, (req, res) => {
   };
   const onDone     = (d) => { send("done", d); finish(); };
   const onErr      = (e) => { send("error", e); finish(); };
+  const onCancel = () => { send("cancelled", {}); finish(); };
 
   const finish = () => {
     emitter.off("progress", onProgress);
     emitter.off("done", onDone);
     emitter.off("error", onErr);
+    emitter.once("cancelled", onCancel);
     res.end();
   };
 
@@ -351,6 +363,19 @@ app.get("/api/job/:id", async (req, res) => {
 app.get("/job/:id", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "job.html"));
 });
+
+app.post("/api/job/:id/cancel", requirePassword, (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job)          return res.status(404).json({ ok:false, error:"Not found" });
+  if (job.done)      return res.json({ ok:false, error:"Already finished" });
+
+  job.cancelled = true;
+  job.emitter.emit("cancel");          // notify the worker
+  sqlCancelJob.run({ jobId:req.params.id, endedAt:Date.now() });
+
+  res.json({ ok:true });
+});
+
 
 
 // Simple health

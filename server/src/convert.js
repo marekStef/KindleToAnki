@@ -370,6 +370,7 @@ function pLimit(limit) {
 }
 
 export async function buildApkg({
+  emitter,
   dbPath,
   bookId,
   deckName,
@@ -494,7 +495,12 @@ Task:
     //   done += 1;
     //   onProgress({ done, total });
     // });
+
+    let cancelled = false;
+    if (emitter) emitter.once("cancel", () => (cancelled = true));
+
     const tasks = rows.map((row) => async () => {
+      if (cancelled) return;  
       const word = clean(row.word || "");
       const sentence = clean(row.sentence || "");
       if (!word) return;
@@ -648,6 +654,7 @@ Task:
 
 
     await Promise.all(tasks.map((t) => limit(t)));
+    if (cancelled) throw new Error("__CANCELLED__");
 
     // anki-apkg-export returns a binary buffer/string. We'll ensure Buffer.
     const zip = await apkg.save();
