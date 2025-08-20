@@ -34,17 +34,24 @@ function requirePassword(req, res, next) {
 
 const app = express();
 // app.set("trust proxy", false);
-app.use(helmet({
-  // we're serving plain HTTP, so don't tell browsers to force HTTPS
-  hsts: false,
-  // remove the CSP auto-upgrade that nudges HTTPS
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      "upgrade-insecure-requests": null
+app.use(
+  helmet({
+    // serving plain HTTP in dev
+    hsts: false,
+
+    // ⬇ turn the two headers off so Chrome won’t warn
+    crossOriginOpenerPolicy: false,
+    originAgentCluster: false,
+
+    // keep your custom CSP (minus upgrade-to-HTTPS)
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        'upgrade-insecure-requests': null
+      }
     }
-  }
-}));
+  })
+);
 
 // app.use(helmet());
 app.use(morgan("tiny"));
@@ -57,7 +64,7 @@ await fs.mkdir(uploadDir, { recursive: true });
 await fs.mkdir(outDir, { recursive: true });
 
 // Basic rate limiting
-const limiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+const limiter = rateLimit({ windowMs: 60 * 1000, max: 500 });
 app.use(limiter);
 
 // Static frontend
@@ -267,7 +274,7 @@ app.post("/api/convert", async (req, res, next) => {
 });
 
 // SSE progress stream
-app.get("/api/progress/:id", requirePassword, (req, res) => {
+app.get("/api/progress/:id", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).end();
 
@@ -315,7 +322,6 @@ app.get("/api/progress/:id", requirePassword, (req, res) => {
 // Download result
 app.get("/api/download/:id", async (req, res, next) => {
   try {
-    assert(checkPassword(req), "Unauthorized", 401);
     const id = req.params.id;
     const files = await fs.readdir(outDir);
     const match = files.find((f) => f.startsWith(`${id}__`) && f.endsWith(".apkg"));
@@ -332,7 +338,6 @@ app.get("/api/download/:id", async (req, res, next) => {
 // Jobs listing (for homepage “Past jobs”)
 app.get("/api/jobs", async (req, res) => {
   try {
-    assert(checkPassword(req), "Unauthorized", 401);
     const rows = sqlListJobs.all().map(r => ({
       ...r,
       downloadUrl: r.downloadId ? `/api/download/${r.downloadId}` : null
@@ -346,7 +351,6 @@ app.get("/api/jobs", async (req, res) => {
 // Single job (for /job/:id page header)
 app.get("/api/job/:id", async (req, res) => {
   try {
-    assert(checkPassword(req), "Unauthorized", 401);
     const row = sqlGetJob.get(req.params.id);
     assert(row, "Not found", 404);
     const out = {
@@ -364,7 +368,7 @@ app.get("/job/:id", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "job.html"));
 });
 
-app.post("/api/job/:id/cancel", requirePassword, (req, res) => {
+app.post("/api/job/:id/cancel", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job)          return res.status(404).json({ ok:false, error:"Not found" });
   if (job.done)      return res.json({ ok:false, error:"Already finished" });

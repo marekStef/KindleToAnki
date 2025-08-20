@@ -72,8 +72,10 @@
     ev.close();
   });
   ev.addEventListener("error", (e) => {
+    if (ev.readyState !== EventSource.CLOSED || el("status").textContent !== "done") {
     el("status").textContent = "error";
-    ev.close();
+  }
+  ev.close();
   });
   ev.addEventListener("cancelled", () => {
   el("status").textContent = "cancelled";

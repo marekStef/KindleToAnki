@@ -135,7 +135,7 @@ $("buildBtn").addEventListener("click", async () => {
 (async function loadJobsList(){
   const pwInput = $("pw");
   const pw = (pwInput?.value?.trim()) || loadPw();
-  if (!pw) return; // no password yet
+  // if (!pw) return; // no password yet
   try {
     const res = await fetch(`/api/jobs`, {
       headers: { "x-app-password": pw }
