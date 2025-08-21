@@ -7,13 +7,20 @@ services:
     image: kindle-vocab-to-anki:latest
     container_name: kindle-vocab-to-anki
     environment:
-      - TZ=Europe/Bratislava
+      - APP_VERSION=${APP_VERSION}
+      - PORT=${PORT}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB}
+      - CLEANUP_MINUTES=${CLEANUP_MINUTES}
       - APP_PASSWORD=${APP_PASSWORD}
-      - PORT=8080
-      - MAX_UPLOAD_MB=50
-      - CLEANUP_MINUTES=60
-      - PORT=880
-      - OLLAMA_URL=http://127.0.0.1:11434
+
+      # LLM integration
+      
+      - OLLAMA_URL=${OLLAMA_URL}
+
+      # Leave the line below *unset* to disable LLM completely
+      - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_MODELS_INFO=${OLLAMA_MODELS_INFO}
+      - TZ=${TZ}
     # ports:
     #   - "880:8080"
     extra_hosts:

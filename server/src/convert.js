@@ -380,7 +380,7 @@ export async function buildApkg({
   includeSmartVocab = true,
   onProgress = () => {},
   includeLlm = false,
-  llmModel = process.env.OLLAMA_MODEL || "phi3:mini", // "qwen2.5:1.5b", // "phi3:mini"
+  llmModel = null,
 }) {
   // Validate presence
   await fs.access(dbPath);
@@ -402,6 +402,7 @@ export async function buildApkg({
     const llmLimit = pLimit(1);
     
     async function runOllama(word, sentence) {
+      if (!llmModel) return "_LLM disabled_";
   const prompt = `You are an English explainer.
 
 Input:
@@ -519,7 +520,7 @@ Task:
 
             // optional LLM enrichment (Markdown), strictly sequential
       let llmMd = "";
-      if (includeLlm) {
+      if (includeLlm && llmModel) {
         try {
           llmMd = await runOllama(word, sentence || "");
         } catch (e) {

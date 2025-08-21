@@ -1,23 +1,57 @@
 const $ = (id) => document.getElementById(id);
-let token = null;
-let building = false;
 
-function msg(el, text, isErr = false) {
-  el.textContent = text || "";
-  el.classList.toggle("err", !!isErr);
+// ── global state ─────────────────────────────────────────────────────────────
+let token          = null;
+let building       = false;
+let models         = [];       // list returned by /api/llm-models
+let llmAvailable   = false;    // ⇢ true if server exposes ≥1 model
+
+// ── tiny helpers ─────────────────────────────────────────────────────────────
+function msg(el, text = "", isErr = false) {
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("err", isErr);
 }
+function savePw(pw) { try { localStorage.setItem("kvta_pw", pw); } catch {} }
+function loadPw()   { try { return localStorage.getItem("kvta_pw") || ""; } catch { return ""; } }
 
-// persist/reuse password locally (so /job/:id can reconnect SSE)
-function savePw(pw){ try{ localStorage.setItem("kvta_pw", pw); }catch{} }
-function loadPw(){ try{ return localStorage.getItem("kvta_pw") || ""; }catch{ return ""; } }
-
-$("includeLlm").addEventListener("change", e=>{
-  $("llmModel").parentElement.style.display = e.target.checked ? "" : "none";
+// ── LLM controls: show/hide dropdown when checkbox toggles ───────────────────
+$("includeLlm").addEventListener("change", (e) => {
+  $("llmBox").style.display = e.target.checked ? "" : "none";
 });
 
+(async function initUi() {
+  // 1) pre-fill password if stored
+  $("pw").value = loadPw();
+
+  // 2) fetch available LLM models (empty list ⇒ feature disabled)
+  try {
+    const res   = await fetch("/api/llm-models");
+    const d     = await res.json();
+    if (d.ok)   models = d.models || [];
+  } catch { /* network error → treat as no LLM */ }
+
+  llmAvailable = models.length > 0;
+
+  const llmBox = $("llmBox");           // wrapper div with checkbox + select
+  const sel    = $("llmModel");
+
+  if (!llmAvailable) {
+    llmBox.style.display = "none";      // hide entire control group
+  } else {
+    sel.innerHTML = models
+      .map((m) => `<option value="${m.id}">${m.name || m.id}</option>`)
+      .join("");
+  }
+})();
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║                          STEP 1 – file upload                           ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
 $("uploadBtn").addEventListener("click", async () => {
-  const pw = $("pw").value.trim();
+  const pw   = $("pw").value.trim();
   const file = $("file").files[0];
+
   if (!pw || !file) {
     msg($("s1msg"), "Password and file are required.", true);
     return;
@@ -31,40 +65,39 @@ $("uploadBtn").addEventListener("click", async () => {
   msg($("s1msg"), "Uploading & parsing…");
 
   try {
-    const res = await fetch("/api/upload", {
-       method: "POST",
-       headers: { "x-app-password": pw },
-       body: fd
+    const r  = await fetch("/api/upload", {
+      method:  "POST",
+      headers: { "x-app-password": pw },
+      body:    fd
     });
+    const d  = await r.json();
+    if (!d.ok) throw new Error(d.error || "Upload failed");
 
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Upload failed");
+    token = d.token;
 
-    token = data.token;
-
-    // Populate books
+    /* populate book dropdown ------------------------------------------------ */
     const sel = $("book");
     sel.innerHTML = "";
-    data.books.forEach((b) => {
-      const opt = document.createElement("option");
-      opt.value = b.id;
-      const title = b.title || "(untitled)";
-      const authors = b.authors ? ` — ${b.authors}` : "";
-      const lang = b.lang ? ` [${b.lang}]` : "";
-      opt.textContent = `${title}${authors}${lang}`;
+    d.books.forEach((b) => {
+      const opt    = document.createElement("option");
+      opt.value    = b.id;
+      const title  = b.title   || "(untitled)";
+      const author = b.authors ? ` — ${b.authors}` : "";
+      const lang   = b.lang    ? ` [${b.lang}]`   : "";
+      opt.textContent = `${title}${author}${lang}`;
       opt.dataset.stats = `${b.unique_words} words, ${b.lookups} lookups`;
       sel.appendChild(opt);
     });
 
     if (sel.options.length) {
       $("bookStats").textContent = sel.options[0].dataset.stats;
-      $("deck").value = (sel.options[0].textContent || "Kindle Vocab").replace(/\s+/g, " ");
+      $("deck").value            = (sel.options[0].textContent || "Kindle Vocab").trim();
     }
 
     sel.addEventListener("change", () => {
-      const s = sel.options[sel.selectedIndex];
-      $("bookStats").textContent = s.dataset.stats || "";
-      if (!$("deck").value) $("deck").value = (s.textContent || "Kindle Vocab").replace(/\s+/g, " ");
+      const o = sel.options[sel.selectedIndex];
+      $("bookStats").textContent = o.dataset.stats || "";
+      if (!$("deck").value) $("deck").value = (o.textContent || "Kindle Vocab").trim();
     });
 
     $("step2").classList.remove("hidden");
@@ -77,115 +110,88 @@ $("uploadBtn").addEventListener("click", async () => {
   }
 });
 
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║                     STEP 2 – build / convert click                      ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
 $("buildBtn").addEventListener("click", async () => {
-  // ‼️ ignore clicks while a build is already running
-  if (building) return;
+  if (building) return;                 // double-click guard
   const pw = $("pw").value.trim();
   savePw(pw);
-  const bookId = $("book").value;
-  const deckName = $("deck").value.trim();
-  const perWord = $("perWord").checked;
-  // const noScrape = $("noScrape").checked;
-  const noScrape = false;
-  const includeSmartVocab = $("includeSmart").checked;
-  const concurrency = Number($("conc").value || 1);
-  const includeLlm = $("includeLlm").checked;
-  const llmModel = $("llmModel").value;
 
-  if (!token) {
-    msg($("s2msg"), "No upload token. Upload a vocab.db first.", true);
-    return;
-  }
-  if (!deckName) {
-    msg($("s2msg"), "Deck name is required.", true);
-    return;
-  }
+  const payload = {
+    token,
+    bookId:            $("book").value,
+    deckName:          $("deck").value.trim(),
+    perWord:           $("perWord").checked,
+    noScrape:          false,
+    includeSmartVocab: $("includeSmart").checked,
+    concurrency:       Number($("conc").value) || 1,
+    includeLlm:        llmAvailable ? $("includeLlm").checked : false,
+    llmModel:          llmAvailable ? $("llmModel").value : undefined
+  };
+
+  if (!token)    { msg($("s2msg"), "No upload token. Upload first.", true); return; }
+  if (!payload.deckName) { msg($("s2msg"), "Deck name is required.", true); return; }
 
   $("buildBtn").disabled = true;
-  building = true;
+  building               = true;
   msg($("s2msg"), "Starting build…");
 
   try {
-    const res = await fetch("/api/convert", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-app-password": pw
-      },
-      body: JSON.stringify({
-        token, bookId, deckName, perWord, noScrape, concurrency,
-        includeSmartVocab, includeLlm, llmModel
-      })
+    const res  = await fetch("/api/convert", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-app-password": pw },
+      body:    JSON.stringify(payload)
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Conversion failed");
 
-    
-    
-     // NEW: take user to the dedicated job screen (/job/:id)
-     window.location.href = data.jobUrl;
-
-
+    // Jump straight to job detail screen
+    window.location.href = data.jobUrl;
   } catch (e) {
     console.error(e);
-    building = false;  
+    building = false;
     msg($("s2msg"), e.message || "Conversion failed", true);
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Past jobs on the homepage
-// ─────────────────────────────────────────────────────────────────────────────
-(async function loadJobsList(){
-  const pwInput = $("pw");
-  const pw = (pwInput?.value?.trim()) || loadPw();
-  // if (!pw) return; // no password yet
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║                    Homepage – past jobs table (optional)                ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+(async function loadJobsList() {
+  const pw = ($("pw").value.trim()) || loadPw();
   try {
-    const res = await fetch(`/api/jobs`, {
-      headers: { "x-app-password": pw }
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Failed to load jobs");
+    const res = await fetch("/api/jobs", { headers: { "x-app-password": pw } });
+    const d   = await res.json();
+    if (!d.ok) throw new Error(d.error || "Failed to load jobs");
+
     const tbody = $("jobsTable")?.querySelector("tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
-    for (const j of data.jobs) {
-      const tr = document.createElement("tr");
-      const started = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
-      const ended   = j.endedAt   ? new Date(j.endedAt).toLocaleString()   : "";
-      const pct = j.total ? Math.round((j.done||0)/j.total*100) : (j.done||0);
-      const jobLink = `<a href="/job/${j.jobId}">open</a>`;
-      const dl = j.downloadUrl ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>` : "";
+
+    d.jobs.forEach((j) => {
+      const tr       = document.createElement("tr");
+      const started  = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
+      const ended    = j.endedAt   ? new Date(j.endedAt).toLocaleString()   : "";
+      const pct      = j.total ? Math.round(((j.done || 0) / j.total) * 100) : (j.done || 0);
+      const dlLink   = j.downloadUrl
+                        ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>`
+                        : "";
+
       tr.innerHTML = `
-        <td>${(j.bookTitle||"")}</td>
-        <td>${(j.deckName||"")}</td>
+        <td>${j.bookTitle || ""}</td>
+        <td>${j.deckName  || ""}</td>
         <td>${j.status}</td>
         <td>${j.includeLlm ? "yes" : "no"}</td>
-        <td>${j.llmModel||"–"}</td>
+        <td>${j.llmModel || "–"}</td>
         <td>${started}</td>
         <td>${ended}</td>
-        <td>${(j.total? pct+"%": (j.done||0))}</td>
-        <td>${jobLink}</td>
-        <td>${dl}</td>
-        <td><button class="act-btn" title="Delete" data-id="${j.jobId}" ${j.status!=="done"?"disabled":""}>🗑</button></td>
-        `;
-        
+        <td>${j.total ? pct + "%" : (j.done || 0)}</td>
+        <td><a href="/job/${j.jobId}">open</a></td>
+        <td>${dlLink}</td>`;
       tbody.appendChild(tr);
-    }
-        // delegated delete handler
-    tbody.addEventListener("click", async (ev)=>{
-      if(ev.target.matches(".act-btn")){
-        const id = ev.target.dataset.id;
-        if(!confirm("Move this deck to trash?")) return;
-        const r = await fetch(`/api/job/${id}/delete`,{
-          method:"POST",
-          headers:{ "x-app-password": pw }
-        }).then(r=>r.json());
-        if(!r.ok){ alert(r.error||"Failed"); return; }
-        ev.target.closest("tr").remove();
-      }
     });
   } catch (e) {
-    const m = $("jobsMsg"); if (m) m.textContent = e.message;
+    msg($("jobsMsg"), e.message, true);
   }
 })();

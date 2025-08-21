@@ -83,12 +83,13 @@
                 Include LLM explanation at the top of the back side
               </label>
 
-              <label style="display:none">
-                LLM Model:
-                <select id="llmModel">
-                  <option value="chi">chi</option>
-                </select>
-              </label>
+              <div id="llmBox">
+  <label><input type="checkbox" id="includeLlm"> Generate LLM glosses</label><br>
+  <label>Model:
+    <select id="llmModel"></select>
+  </label>
+  <small id="modelInfo"></small>
+</div>
 
               <label>
                 <input id="includeSmart" type="checkbox" />

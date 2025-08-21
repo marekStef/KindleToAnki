@@ -12,6 +12,11 @@ import Database from "better-sqlite3";
 
 import { EventEmitter } from "node:events";
 
+const ALLOWED_MODELS   = (process.env.OLLAMA_MODELS||"").split(/[,;\s]+/).filter(Boolean);
+const MODELS_ENABLED   = ALLOWED_MODELS.length > 0;
+let   MODELS_INFO      = {};
+try { MODELS_INFO = JSON.parse(process.env.OLLAMA_MODELS_INFO||"{}"); } catch {}
+
 // in-memory job registry  (id → {emitter, fileName, downloadId})
 const jobs = new Map();
 
@@ -208,6 +213,19 @@ app.post("/api/convert", async (req, res, next) => {
     assert(bookId, "Missing bookId");
     assert(deckName, "Missing deckName");
 
+    /* ─── strict LLM validation ───────────────────────────────────────── */
+    if (includeLlm) {
+      assert(MODELS_ENABLED, "LLM support is disabled on this server.", 400);
+      assert(llmModel,      "No LLM model chosen.",                     400);
+      assert(
+        ALLOWED_MODELS.includes(llmModel),
+        `Model "${llmModel}" is not allowed.`,
+        400
+      );
+    }
+
+    const model = includeLlm ? llmModel : undefined;
+
     const metaPath = path.join(uploadDir, `${token}.json`);
     const exists = await fs.access(metaPath).then(() => true).catch(() => false);
     assert(exists, "Invalid or expired token");
@@ -225,6 +243,7 @@ app.post("/api/convert", async (req, res, next) => {
     sqlInsertJob.run({
       jobId, token, bookId, bookTitle, deckName,
       includeLlm: includeLlm ? 1 : 0,
+      llmModel: model || null,
       includeSmart: includeSmartVocab !== false ? 1 : 0,
       perWord: perWord ? 1 : 0,
       noScrape: noScrape ? 1 : 0,
@@ -243,8 +262,8 @@ app.post("/api/convert", async (req, res, next) => {
           noScrape,
           concurrency,
           includeSmartVocab: includeSmartVocab !== false, // default true
-          includeLlm: !!includeLlm,                       // NEW
-          llmModel,                                       // NEW (optional)
+          includeLlm: !!includeLlm && !!model,
+          llmModel,
           onProgress: (p) => {
             // persist progressive counts (and total on first tick)
             try {
@@ -461,6 +480,13 @@ app.post("/api/job/:id/delete", requirePassword, async (req,res) => {
     fileName: row.fileName
   });
   res.json({ ok:true, moved });
+});
+
+// Helper to expose catalogue to the UI
+app.get("/api/llm-models", (_req,res)=>{
+  if (!MODELS_ENABLED) return res.json({ok:true, models:[]});
+  const list = ALLOWED_MODELS.map(id=>({id,...(MODELS_INFO[id]||{name:id,quality:"",notes:""})}));
+  res.json({ok:true, models:list});
 });
 
 
