@@ -489,6 +489,12 @@ app.get("/api/llm-models", (_req,res)=>{
   res.json({ok:true, models:list});
 });
 
+app.get("/api/meta", (_req, res) => {
+  res.json({
+    ok: true,
+    version: process.env.APP_VERSION || "dev"
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`[web] listening on :${PORT}`);

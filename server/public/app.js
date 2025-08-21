@@ -20,6 +20,14 @@ $("includeLlm").addEventListener("change", (e) => {
   $("llmBox").style.display = e.target.checked ? "" : "none";
 });
 
+(async function showVersion () {
+  try {
+    const r = await fetch("/api/meta");
+    const d = await r.json();
+    if (d.ok && d.version) document.getElementById("ver").textContent = d.version;
+  } catch { /* swallow if offline */ }
+})();
+
 (async function initUi() {
   // 1) pre-fill password if stored
   $("pw").value = loadPw();
