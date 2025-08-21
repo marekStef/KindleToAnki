@@ -1,10 +1,10 @@
 const $ = (id) => document.getElementById(id);
 
 // ── global state ─────────────────────────────────────────────────────────────
-let token          = null;
-let building       = false;
-let models         = [];       // list returned by /api/llm-models
-let llmAvailable   = false;    // ⇢ true if server exposes ≥1 model
+let token = null;
+let building = false;
+let models = [];       // list returned by /api/llm-models
+let llmAvailable = false;    // ⇢ true if server exposes ≥1 model
 
 // ── tiny helpers ─────────────────────────────────────────────────────────────
 function msg(el, text = "", isErr = false) {
@@ -12,15 +12,15 @@ function msg(el, text = "", isErr = false) {
   el.textContent = text;
   el.classList.toggle("err", isErr);
 }
-function savePw(pw) { try { localStorage.setItem("kvta_pw", pw); } catch {} }
-function loadPw()   { try { return localStorage.getItem("kvta_pw") || ""; } catch { return ""; } }
+function savePw(pw) { try { localStorage.setItem("kvta_pw", pw); } catch { } }
+function loadPw() { try { return localStorage.getItem("kvta_pw") || ""; } catch { return ""; } }
 
 // ── LLM controls: show/hide dropdown when checkbox toggles ───────────────────
 $("includeLlm").addEventListener("change", (e) => {
   $("llmBox").style.display = e.target.checked ? "" : "none";
 });
 
-(async function showVersion () {
+(async function showVersion() {
   try {
     const r = await fetch("/api/meta");
     const d = await r.json();
@@ -34,22 +34,31 @@ $("includeLlm").addEventListener("change", (e) => {
 
   // 2) fetch available LLM models (empty list ⇒ feature disabled)
   try {
-    const res   = await fetch("/api/llm-models");
-    const d     = await res.json();
-    if (d.ok)   models = d.models || [];
+    const res = await fetch("/api/llm-models");
+    const d = await res.json();
+    if (d.ok) models = d.models || [];
   } catch { /* network error → treat as no LLM */ }
 
   llmAvailable = models.length > 0;
 
   const llmBox = $("llmBox");           // wrapper div with checkbox + select
-  const sel    = $("llmModel");
+  const sel = $("llmModel");
 
   if (!llmAvailable) {
     llmBox.style.display = "none";      // hide entire control group
   } else {
     sel.innerHTML = models
-      .map((m) => `<option value="${m.id}">${m.name || m.id}</option>`)
+      .map((m) => `<option value="${m.id}" title="${m.quality || ''}">${m.name || m.id}</option>`)
       .join("");
+
+    /* ✱ update the little info line whenever the selection changes */
+    const info = $("llmInfo");
+    const showInfo = () => {
+      const m = models.find(x => x.id === sel.value) || {};
+      info.textContent = [m.quality, m.notes].filter(Boolean).join(" · ");
+    };
+    sel.addEventListener("change", showInfo);
+    showInfo();               // run once for the default option
   }
 })();
 
@@ -57,7 +66,7 @@ $("includeLlm").addEventListener("change", (e) => {
    ║                          STEP 1 – file upload                           ║
    ╚══════════════════════════════════════════════════════════════════════════╝ */
 $("uploadBtn").addEventListener("click", async () => {
-  const pw   = $("pw").value.trim();
+  const pw = $("pw").value.trim();
   const file = $("file").files[0];
 
   if (!pw || !file) {
@@ -73,12 +82,12 @@ $("uploadBtn").addEventListener("click", async () => {
   msg($("s1msg"), "Uploading & parsing…");
 
   try {
-    const r  = await fetch("/api/upload", {
-      method:  "POST",
+    const r = await fetch("/api/upload", {
+      method: "POST",
       headers: { "x-app-password": pw },
-      body:    fd
+      body: fd
     });
-    const d  = await r.json();
+    const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Upload failed");
 
     token = d.token;
@@ -87,11 +96,11 @@ $("uploadBtn").addEventListener("click", async () => {
     const sel = $("book");
     sel.innerHTML = "";
     d.books.forEach((b) => {
-      const opt    = document.createElement("option");
-      opt.value    = b.id;
-      const title  = b.title   || "(untitled)";
+      const opt = document.createElement("option");
+      opt.value = b.id;
+      const title = b.title || "(untitled)";
       const author = b.authors ? ` — ${b.authors}` : "";
-      const lang   = b.lang    ? ` [${b.lang}]`   : "";
+      const lang = b.lang ? ` [${b.lang}]` : "";
       opt.textContent = `${title}${author}${lang}`;
       opt.dataset.stats = `${b.unique_words} words, ${b.lookups} lookups`;
       sel.appendChild(opt);
@@ -99,7 +108,7 @@ $("uploadBtn").addEventListener("click", async () => {
 
     if (sel.options.length) {
       $("bookStats").textContent = sel.options[0].dataset.stats;
-      $("deck").value            = (sel.options[0].textContent || "Kindle Vocab").trim();
+      $("deck").value = (sel.options[0].textContent || "Kindle Vocab").trim();
     }
 
     sel.addEventListener("change", () => {
@@ -128,28 +137,28 @@ $("buildBtn").addEventListener("click", async () => {
 
   const payload = {
     token,
-    bookId:            $("book").value,
-    deckName:          $("deck").value.trim(),
-    perWord:           $("perWord").checked,
-    noScrape:          false,
+    bookId: $("book").value,
+    deckName: $("deck").value.trim(),
+    perWord: $("perWord").checked,
+    noScrape: false,
     includeSmartVocab: $("includeSmart").checked,
-    concurrency:       Number($("conc").value) || 1,
-    includeLlm:        llmAvailable ? $("includeLlm").checked : false,
-    llmModel:          llmAvailable ? $("llmModel").value : undefined
+    concurrency: Number($("conc").value) || 1,
+    includeLlm: llmAvailable ? $("includeLlm").checked : false,
+    llmModel: llmAvailable ? $("llmModel").value : undefined
   };
 
-  if (!token)    { msg($("s2msg"), "No upload token. Upload first.", true); return; }
+  if (!token) { msg($("s2msg"), "No upload token. Upload first.", true); return; }
   if (!payload.deckName) { msg($("s2msg"), "Deck name is required.", true); return; }
 
   $("buildBtn").disabled = true;
-  building               = true;
+  building = true;
   msg($("s2msg"), "Starting build…");
 
   try {
-    const res  = await fetch("/api/convert", {
-      method:  "POST",
+    const res = await fetch("/api/convert", {
+      method: "POST",
       headers: { "Content-Type": "application/json", "x-app-password": pw },
-      body:    JSON.stringify(payload)
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Conversion failed");
@@ -170,7 +179,7 @@ $("buildBtn").addEventListener("click", async () => {
   const pw = ($("pw").value.trim()) || loadPw();
   try {
     const res = await fetch("/api/jobs", { headers: { "x-app-password": pw } });
-    const d   = await res.json();
+    const d = await res.json();
     if (!d.ok) throw new Error(d.error || "Failed to load jobs");
 
     const tbody = $("jobsTable")?.querySelector("tbody");
@@ -178,17 +187,17 @@ $("buildBtn").addEventListener("click", async () => {
     tbody.innerHTML = "";
 
     d.jobs.forEach((j) => {
-      const tr       = document.createElement("tr");
-      const started  = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
-      const ended    = j.endedAt   ? new Date(j.endedAt).toLocaleString()   : "";
-      const pct      = j.total ? Math.round(((j.done || 0) / j.total) * 100) : (j.done || 0);
-      const dlLink   = j.downloadUrl
-                        ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>`
-                        : "";
+      const tr = document.createElement("tr");
+      const started = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
+      const ended = j.endedAt ? new Date(j.endedAt).toLocaleString() : "";
+      const pct = j.total ? Math.round(((j.done || 0) / j.total) * 100) : (j.done || 0);
+      const dlLink = j.downloadUrl
+        ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>`
+        : "";
 
       tr.innerHTML = `
         <td>${j.bookTitle || ""}</td>
-        <td>${j.deckName  || ""}</td>
+        <td>${j.deckName || ""}</td>
         <td>${j.status}</td>
         <td>${j.includeLlm ? "yes" : "no"}</td>
         <td>${j.llmModel || "–"}</td>
@@ -197,32 +206,32 @@ $("buildBtn").addEventListener("click", async () => {
         <td>${j.total ? pct + "%" : (j.done || 0)}</td>
         <td><a href="/job/${j.jobId}">open</a></td>
         <td>${dlLink}</td>`;
-          // --- NEW delete cell ---------------------------------------------
-  const delTd = document.createElement("td");
-  if (j.status === "done") {
-    const btn = document.createElement("button");
-    btn.className  = "act-btn";
-    btn.textContent = "✕";
-    btn.title      = "Delete job";
-    btn.onclick    = async () => {
-      if (!confirm("Delete this job? This will remove the .apkg file.")) return;
-      btn.disabled = true;
-      try {
-        const r = await fetch(`/api/job/${j.jobId}/delete`, {
-          method: "POST",
-          headers: { "x-app-password": pw }
-        }).then(r => r.json());
-        if (!r.ok) throw new Error(r.error || "Delete failed");
-        tr.remove();                       // vanish from the list
-      } catch (e) {
-        alert(e.message);
-        btn.disabled = false;
+      // --- NEW delete cell ---------------------------------------------
+      const delTd = document.createElement("td");
+      if (j.status === "done") {
+        const btn = document.createElement("button");
+        btn.className = "act-btn";
+        btn.textContent = "✕";
+        btn.title = "Delete job";
+        btn.onclick = async () => {
+          if (!confirm("Delete this job? This will remove the .apkg file.")) return;
+          btn.disabled = true;
+          try {
+            const r = await fetch(`/api/job/${j.jobId}/delete`, {
+              method: "POST",
+              headers: { "x-app-password": pw }
+            }).then(r => r.json());
+            if (!r.ok) throw new Error(r.error || "Delete failed");
+            tr.remove();                       // vanish from the list
+          } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+          }
+        };
+        delTd.appendChild(btn);
       }
-    };
-    delTd.appendChild(btn);
-  }
-  tr.appendChild(delTd);
-  // ------------------------------------------------------------------
+      tr.appendChild(delTd);
+      // ------------------------------------------------------------------
 
       tbody.appendChild(tr);
     });

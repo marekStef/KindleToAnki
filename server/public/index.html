@@ -127,10 +127,15 @@
 
             
 
-            <div id="llmBox">
-              <label style="margin-top:0.4rem;"><input type="checkbox" id="includeLlm" /> Include LLM explanation at the top of the back side</label>
-              <label>Model: <select id="llmModel"></select></label>
-              <small id="modelInfo"></small>
+            <label style="display:block;margin-top:12px">
+              <input type="checkbox" id="includeLlm">
+              Include LLM explanations
+            </label>
+
+            <div id="llmBox" style="display:none;margin:8px 0 0 18px">
+              <label for="llmModel">Model:&nbsp;</label>
+              <select id="llmModel" style="max-width:180px"></select>
+              <span id="llmInfo" style="color:#6c7a89;font-size:.85em"></span>
             </div>
 
             <label><input id="includeSmart" type="checkbox" /> Include <strong>SMART Vocabulary</strong> (from Cambridge)</label>
