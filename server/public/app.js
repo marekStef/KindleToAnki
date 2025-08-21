@@ -105,7 +105,7 @@ $("uploadBtn").addEventListener("click", async () => {
     sel.addEventListener("change", () => {
       const o = sel.options[sel.selectedIndex];
       $("bookStats").textContent = o.dataset.stats || "";
-      if (!$("deck").value) $("deck").value = (o.textContent || "Kindle Vocab").trim();
+      $("deck").value = (o.textContent || "Kindle Vocab").trim();  // always update
     });
 
     $("step2").classList.remove("hidden");
