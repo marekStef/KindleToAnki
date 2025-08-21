@@ -189,6 +189,33 @@ $("buildBtn").addEventListener("click", async () => {
         <td>${j.total ? pct + "%" : (j.done || 0)}</td>
         <td><a href="/job/${j.jobId}">open</a></td>
         <td>${dlLink}</td>`;
+          // --- NEW delete cell ---------------------------------------------
+  const delTd = document.createElement("td");
+  if (j.status === "done") {
+    const btn = document.createElement("button");
+    btn.className  = "act-btn";
+    btn.textContent = "✕";
+    btn.title      = "Delete job";
+    btn.onclick    = async () => {
+      if (!confirm("Delete this job? This will remove the .apkg file.")) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/api/job/${j.jobId}/delete`, {
+          method: "POST",
+          headers: { "x-app-password": pw }
+        }).then(r => r.json());
+        if (!r.ok) throw new Error(r.error || "Delete failed");
+        tr.remove();                       // vanish from the list
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+      }
+    };
+    delTd.appendChild(btn);
+  }
+  tr.appendChild(delTd);
+  // ------------------------------------------------------------------
+
       tbody.appendChild(tr);
     });
   } catch (e) {
