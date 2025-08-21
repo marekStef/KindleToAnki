@@ -19,7 +19,7 @@ A tiny password‑gated site to upload a Kindle `vocab.db`, pick a book, choose 
 1. This:
 
 ```
-marek@raspberrypi5:~/docker/kindleToAnki/server $ docker build -t kindle_to_anki:1.0.2 .
+marek@raspberrypi5:~/docker/kindleToAnki/server $ docker build -t kindle_to_anki:2.0.6 .
 [+] Building 0.9s (14/14) FINISHED                                                              docker:default
  => [internal] load build definition from Dockerfile                                                      0.0s
  => => transferring dockerfile: 653B                                                                      0.0s

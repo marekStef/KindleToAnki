@@ -251,6 +251,8 @@ app.post("/api/convert", async (req, res, next) => {
       startedAt: Date.now()
     });
 
+    // console.log("[convert] LLM:", { includeLlm: Boolean(includeLlm && model), llmModel: model });
+
     // ── 2. fire-and-forget worker ───────────────────────────────────────────
     (async () => {
       try {
@@ -262,8 +264,8 @@ app.post("/api/convert", async (req, res, next) => {
           noScrape,
           concurrency,
           includeSmartVocab: includeSmartVocab !== false, // default true
-          includeLlm: !!includeLlm && !!model,
-          llmModel,
+          includeLlm: Boolean(includeLlm && model),
+          llmModel: model,
           onProgress: (p) => {
             // persist progressive counts (and total on first tick)
             try {

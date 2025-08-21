@@ -125,10 +125,10 @@
             <input id="conc" type="number" min="1" max="8" value="1" />
             <div class="hint"><strong>Concurrency</strong> controls how many words are scraped at once. Higher values can speed up the process, but the server may get blocked at Cambridge if set too high.</div>
 
-            <label style="margin-top:0.4rem;"><input type="checkbox" id="includeLlm" /> Include LLM explanation at the top of the back side</label>
+            
 
             <div id="llmBox">
-              <label><input type="checkbox" id="includeLlmCheckbox" /> Generate LLM glosses</label><br />
+              <label style="margin-top:0.4rem;"><input type="checkbox" id="includeLlm" /> Include LLM explanation at the top of the back side</label>
               <label>Model: <select id="llmModel"></select></label>
               <small id="modelInfo"></small>
             </div>
