@@ -25,11 +25,17 @@
       .ok { color: #3ad29f; }
       .err { color: #ff6b6b; }
       .hint { font-size: .85rem; color: #9fb0c2; }
+
+      table.jobs{width:100%;border-collapse:collapse;font-size:14px}
+      .jobs th,.jobs td{padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left}
+      .jobs tbody tr:nth-child(even){background:#f9fafb}
+      .jobs tbody tr:hover{background:#eef2ff}
+      .jobs .act-btn{background:none;border:0;font-size:1rem;cursor:pointer}
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Kindle Vocab → Anki (v: 2.0.1)</h1>
+      <h1>Kindle Vocab → Anki (v: 2.0.2)</h1>
       <div class="card">
         <div id="step1">
           <div class="row">
@@ -77,6 +83,13 @@
                 Include LLM explanation at the top of the back side
               </label>
 
+              <label style="display:none">
+                LLM Model:
+                <select id="llmModel">
+                  <option value="chi">chi</option>
+                </select>
+              </label>
+
               <label>
                 <input id="includeSmart" type="checkbox" />
                 Include <strong>SMART Vocabulary</strong> (from Cambridge)
@@ -114,7 +127,9 @@
     <table id="jobsTable" border="1" cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;">
       <thead>
         <tr>
-          <th>Book</th><th>Deck</th><th>Status</th><th>Started</th><th>Ended</th><th>Progress</th><th>Link</th><th>Download</th>
+          <th>Book</th><th>Deck</th><th><th>Status</th><th>LLM</th><th>Model</th>
+<th>Started</th><th>Ended</th><th>%</th>
+<th>Job</th><th>Download</th><th></th>
         </tr>
       </thead>
       <tbody></tbody>

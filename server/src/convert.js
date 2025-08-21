@@ -380,7 +380,7 @@ export async function buildApkg({
   includeSmartVocab = true,
   onProgress = () => {},
   includeLlm = false,
-  llmModel = process.env.OLLAMA_MODEL || "qwen2.5:1.5b", // "phi3:mini"
+  llmModel = process.env.OLLAMA_MODEL || "phi3:mini", // "qwen2.5:1.5b", // "phi3:mini"
 }) {
   // Validate presence
   await fs.access(dbPath);

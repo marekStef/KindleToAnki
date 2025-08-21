@@ -101,6 +101,7 @@ jdb.exec(`
     perWord      INTEGER DEFAULT 0,
     noScrape     INTEGER DEFAULT 0,
     concurrency  INTEGER DEFAULT 1,
+    llmModel     TEXT,
     status       TEXT NOT NULL,         -- running | done | cancelled | error
     startedAt    INTEGER NOT NULL,
     endedAt      INTEGER,
@@ -111,11 +112,30 @@ jdb.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_jobs_startedAt ON jobs(startedAt DESC);
 `);
+// in-place migration when the container restarts
+// ── Schema upgrade: add llmModel if missing ────────────────────────────────
+const hasLlmCol = jdb
+  .prepare(`PRAGMA table_info(jobs)`)
+  .all()
+  .some(c => c.name === "llmModel");
+
+if (!hasLlmCol) {
+  try {
+    jdb.exec(`ALTER TABLE jobs ADD COLUMN llmModel TEXT`);
+    console.log("[db] column llmModel added");
+  } catch (e) {
+    // If another container/thread added it in the meantime:
+    if (!/duplicate column/i.test(e.message)) throw e;
+  }
+}
+
+
+
 const sqlInsertJob = jdb.prepare(`
   INSERT INTO jobs (jobId, token, bookId, bookTitle, deckName, includeLlm, includeSmart,
-                    perWord, noScrape, concurrency, status, startedAt)
+                    perWord, noScrape, concurrency, llmModel, status, startedAt)
   VALUES (@jobId, @token, @bookId, @bookTitle, @deckName, @includeLlm, @includeSmart,
-          @perWord, @noScrape, @concurrency, 'running', @startedAt)
+          @perWord, @noScrape, @concurrency, @llmModel, 'running', @startedAt)
 `);
 const sqlUpdateProgress = jdb.prepare(
   `UPDATE jobs SET done=@done, total=COALESCE(total,@total) WHERE jobId=@jobId`
@@ -410,6 +430,39 @@ setInterval(async () => {
     }
   }
 }, 5 * MIN);
+
+// move a finished .apkg into data/out/deleted/
+async function trashJobFile(downloadId){
+  const files = await fs.readdir(outDir);
+  const match = files.find(f => f.startsWith(`${downloadId}__`) && f.endsWith(".apkg"));
+  if (!match) return false;
+  const src = path.join(outDir, match);
+  const dstDir = path.join(outDir, "deleted");
+  await fs.mkdir(dstDir, { recursive:true });
+  await fs.rename(src, path.join(dstDir, match));
+  return true;
+}
+
+// DELETE (trash) finished job
+app.post("/api/job/:id/delete", requirePassword, async (req,res) => {
+  const row = sqlGetJob.get(req.params.id);
+  if (!row)        return res.status(404).json({ ok:false, error:"Not found" });
+  if (row.status !== "done")
+    return res.json({ ok:false, error:"Job is not finished yet." });
+
+  const moved = await trashJobFile(row.downloadId);
+  sqlFinishJob.run({
+    jobId: row.jobId,
+    status: "deleted",
+    endedAt: Date.now(),
+    done: row.done,
+    total: row.total,
+    downloadId: null,
+    fileName: row.fileName
+  });
+  res.json({ ok:true, moved });
+});
+
 
 app.listen(PORT, () => {
   console.log(`[web] listening on :${PORT}`);

@@ -11,6 +11,9 @@ function msg(el, text, isErr = false) {
 function savePw(pw){ try{ localStorage.setItem("kvta_pw", pw); }catch{} }
 function loadPw(){ try{ return localStorage.getItem("kvta_pw") || ""; }catch{ return ""; } }
 
+$("includeLlm").addEventListener("change", e=>{
+  $("llmModel").parentElement.style.display = e.target.checked ? "" : "none";
+});
 
 $("uploadBtn").addEventListener("click", async () => {
   const pw = $("pw").value.trim();
@@ -87,6 +90,7 @@ $("buildBtn").addEventListener("click", async () => {
   const includeSmartVocab = $("includeSmart").checked;
   const concurrency = Number($("conc").value || 1);
   const includeLlm = $("includeLlm").checked;
+  const llmModel = $("llmModel").value;
 
   if (!token) {
     msg($("s2msg"), "No upload token. Upload a vocab.db first.", true);
@@ -110,7 +114,7 @@ $("buildBtn").addEventListener("click", async () => {
       },
       body: JSON.stringify({
         token, bookId, deckName, perWord, noScrape, concurrency,
-        includeSmartVocab, includeLlm
+        includeSmartVocab, includeLlm, llmModel
       })
     });
     const data = await res.json();
@@ -148,7 +152,7 @@ $("buildBtn").addEventListener("click", async () => {
     for (const j of data.jobs) {
       const tr = document.createElement("tr");
       const started = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
-      const ended = j.endedAt ? new Date(j.endedAt).toLocaleString() : "";
+      const ended   = j.endedAt   ? new Date(j.endedAt).toLocaleString()   : "";
       const pct = j.total ? Math.round((j.done||0)/j.total*100) : (j.done||0);
       const jobLink = `<a href="/job/${j.jobId}">open</a>`;
       const dl = j.downloadUrl ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>` : "";
@@ -156,13 +160,31 @@ $("buildBtn").addEventListener("click", async () => {
         <td>${(j.bookTitle||"")}</td>
         <td>${(j.deckName||"")}</td>
         <td>${j.status}</td>
+        <td>${j.includeLlm ? "yes" : "no"}</td>
+        <td>${j.llmModel||"–"}</td>
         <td>${started}</td>
         <td>${ended}</td>
         <td>${(j.total? pct+"%": (j.done||0))}</td>
         <td>${jobLink}</td>
-        <td>${dl}</td>`;
+        <td>${dl}</td>
+        <td><button class="act-btn" title="Delete" data-id="${j.jobId}" ${j.status!=="done"?"disabled":""}>🗑</button></td>
+        `;
+        
       tbody.appendChild(tr);
     }
+        // delegated delete handler
+    tbody.addEventListener("click", async (ev)=>{
+      if(ev.target.matches(".act-btn")){
+        const id = ev.target.dataset.id;
+        if(!confirm("Move this deck to trash?")) return;
+        const r = await fetch(`/api/job/${id}/delete`,{
+          method:"POST",
+          headers:{ "x-app-password": pw }
+        }).then(r=>r.json());
+        if(!r.ok){ alert(r.error||"Failed"); return; }
+        ev.target.closest("tr").remove();
+      }
+    });
   } catch (e) {
     const m = $("jobsMsg"); if (m) m.textContent = e.message;
   }
