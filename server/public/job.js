@@ -54,9 +54,14 @@
     el("prog").textContent = `${j.done||0} / ${j.total||0} (${pct}%)`;
     el("bar").firstElementChild.style.width = pct + "%";
     const dl = el("dl");
+    const dlMd = el("dlMd");
     if (j.downloadUrl) {
       dl.style.display = "";
       dl.href = `${j.downloadUrl}?password=${encodeURIComponent(pw)}`;
+    }
+    if (j.markdownUrl) {
+      dlMd.style.display = "";
+      dlMd.href = `${j.markdownUrl}?password=${encodeURIComponent(pw)}`;
     }
   }
 
@@ -94,7 +99,7 @@
   });
 
   ev.addEventListener("done", (e) => {
-    const { downloadId, fileName } = JSON.parse(e.data);
+    const { downloadId, fileName, mdDownloadId, mdFileName } = JSON.parse(e.data);
     el("status").textContent = "done";
     el("bar").firstElementChild.style.width = "100%";
     el("prog").textContent = `100%`;
@@ -102,6 +107,12 @@
     a.style.display = "";
     a.href = `/api/download/${downloadId}?password=${encodeURIComponent(pw)}`;
     a.download = fileName || "deck.apkg";
+    const b = el("dlMd");
+    if (mdDownloadId) {
+      b.style.display = "";
+      b.href = `/api/download/${mdDownloadId}?password=${encodeURIComponent(pw)}`;
+      b.download = mdFileName || "deck.md";
+    }
     loadHeader().catch(()=>{});
     ev.close();
   });

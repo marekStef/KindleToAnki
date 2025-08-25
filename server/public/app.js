@@ -191,9 +191,11 @@ $("buildBtn").addEventListener("click", async () => {
       const started = j.startedAt ? new Date(j.startedAt).toLocaleString() : "";
       const ended = j.endedAt ? new Date(j.endedAt).toLocaleString() : "";
       const pct = j.total ? Math.round(((j.done || 0) / j.total) * 100) : (j.done || 0);
-      const dlLink = j.downloadUrl
-        ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">download</a>`
-        : "";
+      const dlDeck = j.downloadUrl
+        ? `<a href="${j.downloadUrl}?password=${encodeURIComponent(pw)}">deck</a>` : "";
+      const dlMd = j.markdownUrl
+        ? `<a href="${j.markdownUrl}?password=${encodeURIComponent(pw)}">markdown</a>` : "";
+      const dlCell = [dlDeck, dlMd].filter(Boolean).join(" | ");
 
       tr.innerHTML = `
         <td>${j.bookTitle || ""}</td>
@@ -205,7 +207,7 @@ $("buildBtn").addEventListener("click", async () => {
         <td>${ended}</td>
         <td>${j.total ? pct + "%" : (j.done || 0)}</td>
         <td><a href="/job/${j.jobId}">open</a></td>
-        <td>${dlLink}</td>`;
+        <td>${dlCell}</td>`;
       // --- NEW delete cell ---------------------------------------------
       const delTd = document.createElement("td");
       if (j.status === "done") {

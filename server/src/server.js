@@ -110,7 +110,9 @@ jdb.exec(`
     total        INTEGER,
     done         INTEGER DEFAULT 0,
     downloadId   TEXT,
-    fileName     TEXT
+    fileName     TEXT,
+    mdDownloadId TEXT,
+    mdFileName   TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_jobs_startedAt ON jobs(startedAt DESC);
 
@@ -145,6 +147,19 @@ if (!hasLlmCol) {
   }
 }
 
+// ── Schema upgrade: add markdown columns if missing ─────────────────────────
+const cols = jdb.prepare(`PRAGMA table_info(jobs)`).all();
+const hasMdDownload = cols.some(c => c.name === "mdDownloadId");
+const hasMdFile     = cols.some(c => c.name === "mdFileName");
+if (!hasMdDownload) {
+  try { jdb.exec(`ALTER TABLE jobs ADD COLUMN mdDownloadId TEXT`); }
+  catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+}
+if (!hasMdFile) {
+  try { jdb.exec(`ALTER TABLE jobs ADD COLUMN mdFileName TEXT`); }
+  catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+}
+
 
 
 const sqlInsertJob = jdb.prepare(`
@@ -158,7 +173,9 @@ const sqlUpdateProgress = jdb.prepare(
 );
 const sqlFinishJob = jdb.prepare(
   `UPDATE jobs SET status=@status, endedAt=@endedAt, done=@done, total=@total,
-          downloadId=@downloadId, fileName=@fileName WHERE jobId=@jobId`
+          downloadId=@downloadId, fileName=@fileName,
+          mdDownloadId=@mdDownloadId, mdFileName=@mdFileName
+   WHERE jobId=@jobId`
 );
 const sqlErrorJob = jdb.prepare(
   `UPDATE jobs SET status='error', endedAt=@endedAt WHERE jobId=@jobId`
@@ -293,10 +310,11 @@ app.post("/api/convert", async (req, res, next) => {
     // ── 2. fire-and-forget worker ───────────────────────────────────────────
     (async () => {
       try {
-        const buf = await buildApkg({
+         const result = await buildApkg({
           dbPath: meta.path,
           bookId,
           deckName,
+          bookTitle,
           perWord,
           noScrape,
           concurrency,
@@ -313,16 +331,21 @@ app.post("/api/convert", async (req, res, next) => {
           emitter
         });
 
-        // 3️⃣ save & mark done
+        // 3️⃣ save outputs & mark done
         const safeName  = deckName.replace(/[^-\w .]/g, "_") + ".apkg";
+        const safeMd    = deckName.replace(/[^-\w .]/g, "_") + ".md";
         const outPath   = path.join(outDir, `${downloadId}__${safeName}`);
-        await fs.writeFile(outPath, buf);
+        await fs.writeFile(outPath, result.apkg);
+
+        const mdDownloadId = nanoid();
+        const mdPath       = path.join(outDir, `${mdDownloadId}__${safeMd}`);
+        await fs.writeFile(mdPath, result.markdown, "utf8");
 
         // persist a final log line before signalling completion
         emitter.emit("log", { level:"info", ts: Date.now(), scope:"job", message:"Job finished." });
 
-        emitter.emit("done", { downloadId, fileName: safeName });
-        Object.assign(jobs.get(jobId), { done:true, downloadId, fileName:safeName });
+        emitter.emit("done", { downloadId, fileName: safeName, mdDownloadId, mdFileName: safeMd });
+        Object.assign(jobs.get(jobId), { done:true, downloadId, fileName:safeName, mdDownloadId, mdFileName: safeMd });
 
         // persist completion
         try {
@@ -333,7 +356,8 @@ app.post("/api/convert", async (req, res, next) => {
             endedAt: Date.now(),
             done: row?.total ?? row?.done ?? null,
             total: row?.total ?? null,
-            downloadId, fileName: safeName
+             downloadId, fileName: safeName,
+            mdDownloadId, mdFileName: safeMd
           });
         } catch {}
         try { emitter.off("log", persistLog); } catch {}
@@ -378,8 +402,8 @@ app.get("/api/progress/:id", (req, res) => {
   const send = (type, data) =>
     res.write(`event:${type}\ndata:${JSON.stringify(data)}\n\n`);
 
-  const { emitter, done, downloadId, fileName } = job;
-  if (done) send("done", { downloadId, fileName });
+const { emitter, done, downloadId, fileName, mdDownloadId, mdFileName } = job;
+if (done) send("done", { downloadId, fileName, mdDownloadId, mdFileName });
 
     const startedAt = (sqlGetJob.get(req.params.id)?.startedAt) || Date.now();
   const onProgress = (p) => {
@@ -402,7 +426,7 @@ app.get("/api/progress/:id", (req, res) => {
     emitter.off("log", onLog);
     emitter.off("done", onDone);
     emitter.off("error", onErr);
-    emitter.once("cancelled", onCancel);
+    emitter.off("cancelled", onCancel);
     res.end();
   }
 
@@ -410,6 +434,7 @@ app.get("/api/progress/:id", (req, res) => {
   emitter.on("progress", onProgress);
   emitter.once("done", onDone);
   emitter.once("error", onErr);
+  emitter.once("cancelled", onCancel);
 });
 
 // List persisted logs for a job (for page reloads)
@@ -433,10 +458,14 @@ app.get("/api/download/:id", async (req, res, next) => {
   try {
     const id = req.params.id;
     const files = await fs.readdir(outDir);
-    const match = files.find((f) => f.startsWith(`${id}__`) && f.endsWith(".apkg"));
+    const match = files.find((f) => f.startsWith(`${id}__`));
     assert(match, "Not found", 404);
     const full = path.join(outDir, match);
-    res.setHeader("Content-Type", "application/octet-stream");
+    const ext = path.extname(match).toLowerCase();
+    const type = ext === ".md" || ext === ".markdown"
+      ? "text/markdown; charset=utf-8"
+      : "application/octet-stream";
+    res.setHeader("Content-Type", type);
     res.setHeader("Content-Disposition", `attachment; filename="${match.split("__")[1]}"`);
     res.sendFile(full);
   } catch (e) {
@@ -449,7 +478,8 @@ app.get("/api/jobs", async (req, res) => {
   try {
     const rows = sqlListJobs.all().map(r => ({
       ...r,
-      downloadUrl: r.downloadId ? `/api/download/${r.downloadId}` : null
+      downloadUrl: r.downloadId ? `/api/download/${r.downloadId}` : null,
+      markdownUrl: r.mdDownloadId ? `/api/download/${r.mdDownloadId}` : null
     }));
     res.json({ ok:true, jobs: rows });
   } catch (e) {
@@ -464,7 +494,8 @@ app.get("/api/job/:id", async (req, res) => {
     assert(row, "Not found", 404);
     const out = {
       ...row,
-      downloadUrl: row.downloadId ? `/api/download/${row.downloadId}` : null
+      downloadUrl: row.downloadId ? `/api/download/${row.downloadId}` : null,
+      markdownUrl: row.mdDownloadId ? `/api/download/${row.mdDownloadId}` : null
     };
     res.json({ ok:true, job: out });
   } catch (e) {
@@ -523,7 +554,7 @@ setInterval(async () => {
 // move a finished .apkg into data/out/deleted/
 async function trashJobFile(downloadId){
   const files = await fs.readdir(outDir);
-  const match = files.find(f => f.startsWith(`${downloadId}__`) && f.endsWith(".apkg"));
+  const match = files.find(f => f.startsWith(`${downloadId}__`));
   if (!match) return false;
   const src = path.join(outDir, match);
   const dstDir = path.join(outDir, "deleted");
@@ -539,7 +570,8 @@ app.post("/api/job/:id/delete", requirePassword, async (req,res) => {
   if (row.status !== "done")
     return res.json({ ok:false, error:"Job is not finished yet." });
 
-  const moved = await trashJobFile(row.downloadId);
+  const moved1 = row.downloadId    ? await trashJobFile(row.downloadId)    : false;
+  const moved2 = row.mdDownloadId  ? await trashJobFile(row.mdDownloadId)  : false;
   sqlFinishJob.run({
     jobId: row.jobId,
     status: "deleted",
@@ -547,9 +579,11 @@ app.post("/api/job/:id/delete", requirePassword, async (req,res) => {
     done: row.done,
     total: row.total,
     downloadId: null,
-    fileName: row.fileName
+    fileName: row.fileName,
+    mdDownloadId: null,
+    mdFileName: row.mdFileName
   });
-  res.json({ ok:true, moved });
+  res.json({ ok:true, moved: moved1 || moved2 });
 });
 
 // Helper to expose catalogue to the UI

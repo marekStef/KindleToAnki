@@ -374,6 +374,7 @@ export async function buildApkg({
   dbPath,
   bookId,
   deckName,
+  bookTitle = "",
   perWord = false,
   noScrape = false,
   concurrency = 4,
@@ -433,6 +434,13 @@ export async function buildApkg({
 
     let cancelled = false;
     if (emitter) emitter.once("cancel", () => (cancelled = true));
+
+    // Collect one big Markdown document alongside APKG
+    const mdParts = [];
+    mdParts.push(`# ${escapeHtml(deckName)}\n`);
+    if (bookTitle) mdParts.push(`**Book:** ${escapeHtml(bookTitle)}\n`);
+    mdParts.push(`**Generated:** ${new Date().toISOString()}\n`);
+    mdParts.push(`\n---\n`);
 
     const tasks = rows.map((row) => async () => {
       if (cancelled) return;  
@@ -601,6 +609,23 @@ export async function buildApkg({
 
       apkg.addCard(frontTitle, backHtml);
 
+      // ── Markdown aggregate (one section per item) ───────────────────────
+      const lines = [];
+      lines.push(`\n\n## ${mdEscape(word)}`);
+      if (sentence) lines.push(`\n> ${mdEscape(sentence)}`);
+      if (includeLlm && llmMd) {
+        lines.push(`\n\n### Explanation (LLM)\n`);
+        lines.push(llmMd.trim());
+      }
+      if (!noScrape && md) {
+        // keep the scraped structure, but tuck it into a collapsible
+        lines.push(`\n\n<details><summary>Cambridge extract</summary>\n\n`);
+        lines.push(md.trim());
+        lines.push(`\n\n</details>`);
+      }
+      lines.push(`\n\n---`);
+      mdParts.push(lines.join(""));
+
       done += 1;
       onProgress({ done, total });
     });
@@ -612,7 +637,9 @@ export async function buildApkg({
     // anki-apkg-export returns a binary buffer/string. We'll ensure Buffer.
     const zip = await apkg.save();
     const buf = Buffer.isBuffer(zip) ? zip : Buffer.from(zip, "binary");
-    return buf;
+    const markdown = mdParts.join("\n");
+    return { apkg: buf, markdown };
+    
   } finally {
     db.close();
   }
