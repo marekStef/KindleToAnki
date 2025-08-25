@@ -239,3 +239,61 @@ $("buildBtn").addEventListener("click", async () => {
     msg($("jobsMsg"), e.message, true);
   }
 })();
+
+// ── dropzone setup ───────────────────────────────────────────────────────────
+function formatBytes(bytes){
+  if (!Number.isFinite(bytes)) return "";
+  const u = ["B","KB","MB","GB"]; let i = 0; let n = bytes;
+  while (n >= 1024 && i < u.length-1){ n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+}
+
+(function initDropzone(){
+  const dz = $("dropzone");
+  const fi = $("file");
+  const info = $("dropInfo");
+
+  if (!dz || !fi) return;
+
+  const setSelectedFile = (file) => {
+    if (!file) return;
+    // Only accept .db by name (mimetypes are unreliable for sqlite)
+    if (!/\.db$/i.test(file.name)) {
+      msg($("s1msg"), "Please select a .db file (Kindle vocab.db).", true);
+      return;
+    }
+    // Put file into the hidden input so existing code keeps working
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fi.files = dt.files;
+
+    // Nice visual status
+    info.innerHTML = `<span class="file-chip"><code>${file.name}</code> ${formatBytes(file.size)}</span>`;
+    dz.classList.add("hasfile");
+    msg($("s1msg"), "File ready. You can now Upload & List Books.");
+  };
+
+  // Clicking the square opens the file picker
+  dz.addEventListener("click", () => fi.click());
+  dz.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fi.click(); }
+  });
+
+  // If user chooses via picker
+  fi.addEventListener("change", () => {
+    if (fi.files && fi.files[0]) setSelectedFile(fi.files[0]);
+  });
+
+  // Drag & drop
+  const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ["dragenter","dragover"].forEach(ev =>
+    dz.addEventListener(ev, (e) => { prevent(e); dz.classList.add("dragover"); })
+  );
+  ["dragleave","dragend","drop"].forEach(ev =>
+    dz.addEventListener(ev, (e) => { prevent(e); dz.classList.remove("dragover"); })
+  );
+  dz.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) setSelectedFile(f);
+  });
+})();

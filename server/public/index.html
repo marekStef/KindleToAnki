@@ -1,194 +1,453 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kindle Vocab → Anki</title>
 
-    <!-- Modern font -->
-    <link rel="preconnect" href="https://fonts.gstatic.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kindle Vocab → Anki</title>
 
-    <style>
-      /* ---------- DESIGN TOKENS ---------- */
-      :root {
-        --pad: 1rem;
-        --radius: 12px;
-        --gap: 1rem;
-        --primary: #2563eb;
-        --primary-hover: #1d4ed8;
-        --bg: #0f172a;
-        --card: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-muted: #94a3b8;
-        --shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  <!-- Modern font -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ---------- DESIGN TOKENS ---------- */
+    :root {
+      --pad: 1rem;
+      --radius: 12px;
+      --gap: 1rem;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    }
+
+    /* ---------- GLOBAL ---------- */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    h1 {
+      font-size: clamp(1.4rem, 2.5vw + 0.5rem, 2rem);
+      margin: 0 0 1rem;
+      font-weight: 600;
+    }
+
+    /* ---------- LAYOUT ---------- */
+    .wrap {
+      max-width: 60rem;
+      margin: 0 auto;
+      padding: 2rem 1rem 3rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--pad);
+      box-shadow: var(--shadow);
+    }
+
+    .row {
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap);
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem;
+      font-size: 1rem;
+    }
+
+    input[type="file"] {
+      padding: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .btn {
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 0.65rem 1.4rem;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: background 120ms, transform 120ms;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .muted {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .hr {
+      height: 1px;
+      background: var(--border);
+      margin: 1.5rem 0;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      gap: var(--gap);
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .ok {
+      color: #3ad29f;
+    }
+
+    .err {
+      color: #ff6b6b;
+    }
+
+    .hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* ---------- PROGRESS ---------- */
+    progress {
+      width: 100%;
+      height: 12px;
+      appearance: none;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    progress::-webkit-progress-bar {
+      background-color: #1e293b;
+    }
+
+    progress::-webkit-progress-value {
+      background-color: var(--primary);
+    }
+
+    /* ---------- RESPONSIVE TABLE ---------- */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table.jobs {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      min-width: 48rem;
+    }
+
+    .jobs th,
+    .jobs td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #1e2939;
+      text-align: left;
+    }
+
+    .jobs th {
+      font-weight: 600;
+      color: var(--text);
+      background: #162032;
+    }
+
+    .jobs tbody tr:nth-child(even) {
+      background: #131c2b;
+    }
+
+    .jobs tbody tr:hover {
+      background: #192339;
+    }
+
+    .jobs .act-btn {
+      background: none;
+      border: 0;
+      font-size: 1rem;
+      cursor: pointer;
+      color: var(--primary);
+      line-height: 1;
+      transition: color 120ms, transform 120ms;
+    }
+
+    .jobs .act-btn:hover {
+      color: #ff6b6b;
+      transform: scale(1.1);
+    }
+
+    /* Small screen tweaks */
+    @media (max-width:600px) {
+      .wrap {
+        padding: 1.5rem 1rem 2.5rem;
       }
 
-      /* ---------- GLOBAL ---------- */
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        -webkit-font-smoothing: antialiased;
+      .row {
+        gap: 0.8rem;
       }
-      a { color: var(--primary); text-decoration: none; }
-      h1 { font-size: clamp(1.4rem, 2.5vw + 0.5rem, 2rem); margin: 0 0 1rem; font-weight: 600; }
 
-      /* ---------- LAYOUT ---------- */
-      .wrap { max-width: 60rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: var(--pad);
-        box-shadow: var(--shadow);
+      h1 {
+        font-size: 1.35rem;
       }
-      .row { display: flex; flex-direction: column; gap: var(--gap); }
-      label { font-weight: 600; font-size: 0.95rem; }
-      input[type="text"], input[type="password"], input[type="number"], select {
-        width: 100%; background: #0b1220; color: var(--text); border: 1px solid var(--border);
-        border-radius: 10px; padding: 0.65rem 0.75rem; font-size: 1rem;
+
+      .btn,
+      input[type="text"],
+      input[type="password"],
+      input[type="number"],
+      select {
+        font-size: 0.95rem;
       }
-      input[type="file"]{ padding:0.5rem; font-size:0.95rem; }
-      .btn{ cursor:pointer; background:var(--primary); color:#fff; border:none; border-radius:999px;
-        padding:0.65rem 1.4rem; font-weight:600; font-size:1rem; transition:background 120ms,transform 120ms; }
-      .btn:hover:not(:disabled){ background:var(--primary-hover); transform:translateY(-1px);} .btn:disabled{ opacity:0.5; cursor:not-allowed; }
-      .muted{ color:var(--text-muted); font-size:0.9rem; }
-      .hr{ height:1px; background:var(--border); margin:1.5rem 0; }
-      .hidden{ display:none !important; }
-      .pill{ display:inline-block; padding:4px 10px; border:1px solid var(--border); border-radius:999px; font-size:0.8rem; }
-      .grid-2{ display:grid; gap:var(--gap); grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
-      .ok{ color:#3ad29f;} .err{ color:#ff6b6b;} .hint{ font-size:0.85rem; color:var(--text-muted);} 
+    }
 
-      /* ---------- PROGRESS ---------- */
-      progress{ width:100%; height:12px; appearance:none; border-radius:999px; overflow:hidden; }
-      progress::-webkit-progress-bar{ background-color:#1e293b;} progress::-webkit-progress-value{ background-color:var(--primary); }
+    /* ---------- DROPZONE ---------- */
+    .sr-only {
+      position: absolute !important;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
-      /* ---------- RESPONSIVE TABLE ---------- */
-      .table-wrap{ width:100%; overflow-x:auto; }
-      table.jobs{ width:100%; border-collapse:collapse; font-size:0.9rem; min-width:48rem; }
-      .jobs th,.jobs td{ padding:0.6rem 0.75rem; border-bottom:1px solid #1e2939; text-align:left; }
-      .jobs th{ font-weight:600; color:var(--text); background:#162032; }
-      .jobs tbody tr:nth-child(even){ background:#131c2b;} .jobs tbody tr:hover{ background:#192339; }
-      .jobs .act-btn{ background:none; border:0; font-size:1rem; cursor:pointer; color:var(--primary); line-height:1; transition:color 120ms, transform 120ms; }
-      .jobs .act-btn:hover{ color:#ff6b6b; transform:scale(1.1); }
+    .dropzone {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 1/1;
+      max-width: 420px;
+      width: 100%;
+      margin: 0.5rem 0 0.25rem;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(2, 6, 23, 0.65));
+      transition: border-color 120ms, box-shadow 120ms, transform 120ms, background 120ms;
+      cursor: pointer;
+    }
 
-      /* Small screen tweaks */
-      @media (max-width:600px){
-        .wrap{ padding:1.5rem 1rem 2.5rem;} .row{ gap:0.8rem;} h1{ font-size:1.35rem; }
-        .btn,input[type="text"],input[type="password"],input[type="number"],select{ font-size:0.95rem; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h1>Kindle Vocab → Anki 
-         <span class="pill" id="ver">...</span>
-      </h1>
+    .dropzone:hover,
+    .dropzone:focus-visible {
+      border-color: var(--primary);
+      box-shadow: inset 0 0 0 4px rgba(37, 99, 235, 0.12), var(--shadow);
+    }
 
-      <div class="card">
-        <!-- STEP 1 -->
-        <div id="step1">
-          <div class="row">
-            <label for="pw">Access password</label>
-            <input id="pw" type="password" placeholder="Enter password → marekanki" />
+    .dropzone.dragover {
+      background: #0b1426;
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
 
-            <label for="file">Kindle vocab.db <span class="muted">(system/vocabulary/vocab.db)</span></label>
-            <input id="file" type="file" accept=".db" />
+    .dz-inner {
+      text-align: center;
+      padding: 1rem;
+    }
 
-            <button id="uploadBtn" class="btn">Upload & List Books</button>
-            <div id="s1msg" class="muted"></div>
-          </div>
-        </div>
+    .dz-icon {
+      width: 44px;
+      height: 44px;
+      opacity: 0.9;
+      margin: 0 0 0.5rem;
+    }
 
-        <!-- STEP 2 -->
-        <div id="step2" class="hidden">
-          <div class="hr"></div>
-          <div class="row">
-            <label for="book">Pick a book</label>
-            <select id="book"></select>
-            <div class="hint" id="bookStats"></div>
+    .dz-title {
+      font-weight: 600;
+    }
 
-            <label for="deck">Deck name</label>
-            <div class="hint"><strong>Why is this important?</strong> The deck name tells Anki where to put your cards. If you already have a deck with this name, the import will update it instead of creating duplicates. Without a deck name, your cards won’t import correctly.</div>
-            <input id="deck" type="text" placeholder="e.g., The Great Gatsby" />
+    .file-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #0b1220;
+      font-size: 0.9rem;
+    }
 
-            <div class="grid-2">
-              <label><input id="perWord" type="checkbox" /> One card per unique word (latest sentence)</label>
+    .file-chip code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Kindle Vocab → Anki
+      <span class="pill" id="ver">...</span>
+    </h1>
+
+    <div class="card">
+      <!-- STEP 1 -->
+      <div id="step1">
+        <div class="row">
+          <label for="pw">Access password</label>
+          <input id="pw" type="password" placeholder="Enter password → marekanki" />
+
+          <label>Kindle vocab.db <span class="muted">(system/vocabulary/vocab.db)</span></label>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button"
+            aria-label="Drop your Kindle vocab.db here or click to browse">
+            <div class="dz-inner">
+              <!-- cloud-upload svg -->
+              <svg class="dz-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 18a5 5 0 0 1-.3-9.996A7 7 0 0 1 21 11a4 4 0 0 1-1 7h-3" />
+                <path d="M12 3v10m0 0 3.5-3.5M12 13 8.5 9.5" />
+              </svg>
+              <div class="dz-title">Drop your <code>vocab.db</code> here</div>
+              <div class="muted" id="dropInfo">…or click to choose a file</div>
             </div>
-            <div class="hint">Anki saves the same word multiple times if it appears in different sentences. This option creates one card per unique word, using the latest sentence it appears in.</div>
-
-            <label for="conc">Concurrency (1–8)</label>
-            <input id="conc" type="number" min="1" max="8" value="1" />
-            <div class="hint"><strong>Concurrency</strong> controls how many words are scraped at once. Higher values can speed up the process, but the server may get blocked at Cambridge if set too high.</div>
-
-            
-
-            <label style="display:block;margin-top:12px">
-              <input type="checkbox" id="includeLlm">
-              Include LLM explanations
-            </label>
-
-            <div id="llmBox" style="display:none;margin:8px 0 0 18px">
-              <label for="llmModel">Model:&nbsp;</label>
-              <select id="llmModel" style="max-width:180px"></select>
-              <span id="llmInfo" style="color:#6c7a89;font-size:.85em"></span>
-            </div>
-
-            <label><input id="includeSmart" type="checkbox" /> Include <strong>SMART Vocabulary</strong> (from Cambridge)</label>
-            <div class="hint">Adds Cambridge’s “SMART Vocabulary” topic lists to the back of each card (curated clusters of related words). Turn this <em>off</em> if you prefer a leaner back side or smaller deck file size.</div>
-
-            <button id="buildBtn" class="btn" style="margin-top:0.5rem;">Build .apkg</button>
-
-            <div id="pbWrap" class="hidden"><progress id="pb" max="100" value="0"></progress> <span id="pct">0&nbsp;%</span></div>
-            <div id="s2msg" class="muted"></div>
+            <!-- Keep the real input for compatibility; it’s just visually hidden -->
+            <input id="file" type="file" accept=".db" class="sr-only" />
           </div>
+
+          <button id="uploadBtn" class="btn">Upload & List Books</button>
+          <div id="s1msg" class="muted"></div>
         </div>
+      </div>
 
-        <!-- STEP 3 -->
-        <div id="step3" class="hidden">
-          <div class="hr"></div>
-          <div class="row">
-            <div id="done" class="ok">Deck ready.</div>
-            <a id="dl" class="btn" href="#">Download .apkg</a>
-            <div class="hint">You can upload another DB to make more decks. Files auto-clean after a while.</div>
+      <!-- STEP 2 -->
+      <div id="step2" class="hidden">
+        <div class="hr"></div>
+        <div class="row">
+          <label for="book">Pick a book</label>
+          <select id="book"></select>
+          <div class="hint" id="bookStats"></div>
+
+          <label for="deck">Deck name</label>
+          <div class="hint"><strong>Why is this important?</strong> The deck name tells Anki where to put your cards. If
+            you already have a deck with this name, the import will update it instead of creating duplicates. Without a
+            deck name, your cards won’t import correctly.</div>
+          <input id="deck" type="text" placeholder="e.g., The Great Gatsby" />
+
+          <div class="grid-2">
+            <label><input id="perWord" type="checkbox" /> One card per unique word (latest sentence)</label>
           </div>
+          <div class="hint">Anki saves the same word multiple times if it appears in different sentences. This option
+            creates one card per unique word, using the latest sentence it appears in.</div>
+
+          <label for="conc">Concurrency (1–8)</label>
+          <input id="conc" type="number" min="1" max="8" value="1" />
+          <div class="hint"><strong>Concurrency</strong> controls how many words are scraped at once. Higher values can
+            speed up the process, but the server may get blocked at Cambridge if set too high.</div>
+
+
+
+          <label style="display:block;margin-top:12px">
+            <input type="checkbox" id="includeLlm">
+            Include LLM explanations
+          </label>
+
+          <div id="llmBox" style="display:none;margin:8px 0 0 18px">
+            <label for="llmModel">Model:&nbsp;</label>
+            <select id="llmModel" style="max-width:180px"></select>
+            <span id="llmInfo" style="color:#6c7a89;font-size:.85em"></span>
+          </div>
+
+          <label><input id="includeSmart" type="checkbox" /> Include <strong>SMART Vocabulary</strong> (from
+            Cambridge)</label>
+          <div class="hint">Adds Cambridge’s “SMART Vocabulary” topic lists to the back of each card (curated clusters
+            of related words). Turn this <em>off</em> if you prefer a leaner back side or smaller deck file size.</div>
+
+          <button id="buildBtn" class="btn" style="margin-top:0.5rem;">Build .apkg</button>
+
+          <div id="pbWrap" class="hidden"><progress id="pb" max="100" value="0"></progress> <span
+              id="pct">0&nbsp;%</span></div>
+          <div id="s2msg" class="muted"></div>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div id="step3" class="hidden">
+        <div class="hr"></div>
+        <div class="row">
+          <div id="done" class="ok">Deck ready.</div>
+          <a id="dl" class="btn" href="#">Download .apkg</a>
+          <div class="hint">You can upload another DB to make more decks. Files auto-clean after a while.</div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- PAST JOBS -->
-    <section class="wrap" style="padding-top:0">
-      <h2 style="font-size:1.25rem;margin-bottom:0.5rem;">Past jobs</h2>
-      <div id="jobsMsg" class="muted" style="margin:0.4rem 0;"></div>
+  <!-- PAST JOBS -->
+  <section class="wrap" style="padding-top:0">
+    <h2 style="font-size:1.25rem;margin-bottom:0.5rem;">Past jobs</h2>
+    <div id="jobsMsg" class="muted" style="margin:0.4rem 0;"></div>
 
-      <div class="table-wrap">
-        <table id="jobsTable" class="jobs">
-          <thead>
-            <tr>
-              <th>Book</th>
-              <th>Deck</th>
-              <th>Status</th>
-              <th>LLM</th>
-              <th>Model</th>
-              <th>Started</th>
-              <th>Ended</th>
-              <th>%</th>
-              <th>Job</th>
-              <th>Download</th>
-              <th>Delete</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+    <div class="table-wrap">
+      <table id="jobsTable" class="jobs">
+        <thead>
+          <tr>
+            <th>Book</th>
+            <th>Deck</th>
+            <th>Status</th>
+            <th>LLM</th>
+            <th>Model</th>
+            <th>Started</th>
+            <th>Ended</th>
+            <th>%</th>
+            <th>Job</th>
+            <th>Download</th>
+            <th>Delete</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
 
-    <script src="/app.js" type="module"></script>
+  <script src="/app.js" type="module"></script>
 
-    
-  </body>
+
+</body>
+
 </html>
