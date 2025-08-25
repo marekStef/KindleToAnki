@@ -200,6 +200,7 @@ $("buildBtn").addEventListener("click", async () => {
       tr.innerHTML = `
         <td>${j.bookTitle || ""}</td>
         <td>${j.deckName || ""}</td>
+        <td>${(j.newCards ?? null) != null ? j.newCards : "–"}</td>
         <td>${j.status}</td>
         <td>${j.includeLlm ? "yes" : "no"}</td>
         <td>${j.llmModel || "–"}</td>

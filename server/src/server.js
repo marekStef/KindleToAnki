@@ -109,6 +109,7 @@ jdb.exec(`
     endedAt      INTEGER,
     total        INTEGER,
     done         INTEGER DEFAULT 0,
+    newCards     INTEGER, -- actual number of cards generated
     downloadId   TEXT,
     fileName     TEXT,
     mdDownloadId TEXT,
@@ -160,6 +161,13 @@ if (!hasMdFile) {
   catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
 }
 
+// ── Schema upgrade: add newCards if missing ────────────────────────────────
+const cols2 = jdb.prepare(`PRAGMA table_info(jobs)`).all();
+const hasNewCards = cols2.some(c => c.name === "newCards");
+if (!hasNewCards) {
+  try { jdb.exec(`ALTER TABLE jobs ADD COLUMN newCards INTEGER`); }
+  catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+}
 
 
 const sqlInsertJob = jdb.prepare(`
@@ -173,10 +181,12 @@ const sqlUpdateProgress = jdb.prepare(
 );
 const sqlFinishJob = jdb.prepare(
   `UPDATE jobs SET status=@status, endedAt=@endedAt, done=@done, total=@total,
+          newCards=@newCards,
           downloadId=@downloadId, fileName=@fileName,
           mdDownloadId=@mdDownloadId, mdFileName=@mdFileName
    WHERE jobId=@jobId`
 );
+
 const sqlErrorJob = jdb.prepare(
   `UPDATE jobs SET status='error', endedAt=@endedAt WHERE jobId=@jobId`
 );
@@ -356,6 +366,7 @@ app.post("/api/convert", async (req, res, next) => {
             endedAt: Date.now(),
             done: row?.total ?? row?.done ?? null,
             total: row?.total ?? null,
+             newCards: result?.newCards ?? null,
              downloadId, fileName: safeName,
             mdDownloadId, mdFileName: safeMd
           });

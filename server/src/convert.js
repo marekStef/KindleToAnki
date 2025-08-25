@@ -395,6 +395,7 @@ export async function buildApkg({
 
     let done = 0;
     const total = rows.length;
+    let addedCards = 0;    
     const startedAt = Date.now();
     // send an early tick so UI knows the total even before first card finishes
     onProgress({ done, total });
@@ -608,6 +609,7 @@ export async function buildApkg({
       `;
 
       apkg.addCard(frontTitle, backHtml);
+      addedCards += 1;        
 
       // ── Markdown aggregate (one section per item) ───────────────────────
       const lines = [];
@@ -638,8 +640,8 @@ export async function buildApkg({
     const zip = await apkg.save();
     const buf = Buffer.isBuffer(zip) ? zip : Buffer.from(zip, "binary");
     const markdown = mdParts.join("\n");
-    return { apkg: buf, markdown };
-    
+    return { apkg: buf, markdown, newCards: addedCards };
+
   } finally {
     db.close();
   }
