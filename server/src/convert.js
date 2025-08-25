@@ -448,6 +448,13 @@ export async function buildApkg({
         try {
           md = await scrapeCambridgeMarkdown(word, { includeSmartVocab });
         } catch (e) {
+          if (emitter) emitter.emit("log", {
+            level: "error",
+            ts: Date.now(),
+            scope: "scrape",
+            word,
+            message: `Cambridge scrape failed: ${String(e.message)}`
+          });
           md = `_Error scraping Cambridge for **${mdEscape(word)}**: ${mdEscape(e.message)}_`;
         }
       }
@@ -461,6 +468,14 @@ export async function buildApkg({
             sentence: sentence || ""
           }));
         } catch (e) {
+          if (emitter) emitter.emit("log", {
+            level: "error",
+            ts: Date.now(),
+            scope: "llm",
+            word,
+            model: llmModel,
+            message: `LLM failed: ${String(e.message)}`
+          });
           llmMd = `_LLM failed: ${String(e.message)}_`;
         }
       }

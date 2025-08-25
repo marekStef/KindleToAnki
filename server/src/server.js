@@ -113,6 +113,20 @@ jdb.exec(`
     fileName     TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_jobs_startedAt ON jobs(startedAt DESC);
+
+  
+  /* ─────────────── job logs ───────────────
+     Every log line is stored with its jobId & timestamp. */
+  CREATE TABLE IF NOT EXISTS job_logs (
+    jobId   TEXT NOT NULL,
+    ts      INTEGER NOT NULL,
+    level   TEXT,
+    scope   TEXT,
+    word    TEXT,
+    model   TEXT,
+    message TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_logs_job_ts ON job_logs(jobId, ts);
 `);
 // in-place migration when the container restarts
 // ── Schema upgrade: add llmModel if missing ────────────────────────────────
@@ -155,6 +169,19 @@ const sqlListJobs = jdb.prepare(`SELECT * FROM jobs ORDER BY startedAt DESC LIMI
 const sqlCancelJob = jdb.prepare(
   `UPDATE jobs SET status='cancelled', endedAt=@endedAt WHERE jobId=@jobId`
 );
+
+/* logs */
+const sqlInsertLog = jdb.prepare(`
+  INSERT INTO job_logs (jobId, ts, level, scope, word, model, message)
+  VALUES (@jobId, @ts, @level, @scope, @word, @model, @message)
+`);
+const sqlListLogs = jdb.prepare(`
+  SELECT ts, level, scope, word, model, message
+    FROM job_logs
+   WHERE jobId = ?
+   ORDER BY ts ASC
+   LIMIT ? OFFSET ?
+`);
 
 function getBookMetaFromVocab(dbPath, bookId) {
   try {
@@ -232,6 +259,23 @@ app.post("/api/convert", async (req, res, next) => {
     const emitter    = new EventEmitter();
     jobs.set(jobId, { emitter, done:false, cancelled:false });
 
+        // persist every log line for this job
+    const persistLog = (line) => {
+      try {
+        const obj = (line && typeof line === "object") ? line : { message: String(line || "") };
+        sqlInsertLog.run({
+          jobId,
+          ts: Number(obj.ts) || Date.now(),
+          level: String(obj.level || "info"),
+          scope: obj.scope || null,
+          word:  obj.word  || null,
+          model: obj.model || null,
+          message: String(obj.message || "")
+        });
+      } catch {}
+    };
+    emitter.on("log", persistLog);
+
         // persist the job (status: running)
     sqlInsertJob.run({
       jobId, token, bookId, bookTitle, deckName,
@@ -274,6 +318,9 @@ app.post("/api/convert", async (req, res, next) => {
         const outPath   = path.join(outDir, `${downloadId}__${safeName}`);
         await fs.writeFile(outPath, buf);
 
+        // persist a final log line before signalling completion
+        emitter.emit("log", { level:"info", ts: Date.now(), scope:"job", message:"Job finished." });
+
         emitter.emit("done", { downloadId, fileName: safeName });
         Object.assign(jobs.get(jobId), { done:true, downloadId, fileName:safeName });
 
@@ -289,13 +336,22 @@ app.post("/api/convert", async (req, res, next) => {
             downloadId, fileName: safeName
           });
         } catch {}
+        try { emitter.off("log", persistLog); } catch {}
       } catch (err) {
         if (err.message === "__CANCELLED__") {
+          emitter.emit("log", { level:"warn", ts: Date.now(), scope:"job", message:"Job cancelled by user." });
           emitter.emit("cancelled");
           sqlCancelJob.run({ jobId, endedAt:Date.now() });
+          try { emitter.off("log", persistLog); } catch {}
           return;                          // ↩ no “error” status
         }
-        emitter.emit("error", err.message || String(err));
+        emitter.emit("log", {
+            level: "error",
+            ts: Date.now(),
+            scope: "job",
+            message: err.message || String(err),
+          });
+          emitter.emit("error", err.message || String(err));
         try { sqlErrorJob.run({ jobId, endedAt: Date.now() }); } catch {}
       }
     })();
@@ -336,21 +392,40 @@ app.get("/api/progress/:id", (req, res) => {
     const etaMs = speed > 0 ? Math.round((remaining / speed) * 1000) : null;
     send("progress", { ...p, elapsedMs, etaMs, speed });
   };
+  const onLog      = (line) => { send("log", line); };
   const onDone     = (d) => { send("done", d); finish(); };
   const onErr      = (e) => { send("error", e); finish(); };
   const onCancel = () => { send("cancelled", {}); finish(); };
 
-  const finish = () => {
+  function finish() {
     emitter.off("progress", onProgress);
+    emitter.off("log", onLog);
     emitter.off("done", onDone);
     emitter.off("error", onErr);
     emitter.once("cancelled", onCancel);
     res.end();
-  };
+  }
 
+  emitter.on("log", onLog);
   emitter.on("progress", onProgress);
   emitter.once("done", onDone);
   emitter.once("error", onErr);
+});
+
+// List persisted logs for a job (for page reloads)
+app.get("/api/job/:id/logs", (req, res) => {
+  try {
+    // optional paging; defaults are generous but bounded
+    const limit  = Math.max(1, Math.min(10000, toInt(req.query.limit, 10000)));
+    const offset = Math.max(0, toInt(req.query.offset, 0));
+    // ensure the job exists (past or present)
+    const row = sqlGetJob.get(req.params.id);
+    assert(row, "Not found", 404);
+    const logs = sqlListLogs.all(req.params.id, limit, offset);
+    res.json({ ok:true, logs });
+  } catch (e) {
+    res.status(e.status || 500).json({ ok:false, error: e.message || "Failed to load logs" });
+  }
 });
 
 // Download result
