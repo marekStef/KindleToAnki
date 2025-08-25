@@ -9,7 +9,7 @@ import { load as cheerioLoad } from "cheerio";
 import { marked } from "marked";
 import { spawn } from "node:child_process";
 
-const OLLAMA_URL = (process.env.OLLAMA_URL || process.env.OLLAMA_HOST || "").trim();
+import { getLlmResponse } from "./LLMs/llm.js";
 
 // --- NEW: helpers & color constants ---
 const escapeRegExp = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -401,72 +401,6 @@ export async function buildApkg({
     // LLM runner (sequential across all tasks)
     const llmLimit = pLimit(1);
     
-    async function runOllama(word, sentence) {
-      if (!llmModel) return "_LLM disabled_";
-  const prompt = `You are an English explainer.
-
-Input:
-Sentence: "${sentence}"
-Highlighted: "${word}"
-
-Task:
-- If the highlighted word is part of a phrasal verb, explain the full phrasal verb.
-- Otherwise, explain the highlighted word as used in the sentence.
-- Give a short, clear explanation (1–3 sentences).
-- Provide 2–3 short example sentences.
-- Output in Markdown only, with this structure:
-
-### <expression>
-**Part of speech:** <part of speech>
-
-**Meaning:** <short explanation>
-
-**Examples:**
-- <example 1>
-- <example 2>
-- <example 3>`;  
-
-  // Prefer HTTP if OLLAMA_URL is provided (e.g. http://host.docker.internal:11434)
-  if (OLLAMA_URL && /^https?:\/\//i.test(OLLAMA_URL)) {
-    try {
-      const url = OLLAMA_URL.replace(/\/$/, "") + "/api/generate";
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: llmModel,         // uses your existing variable
-          prompt,
-          stream: false
-        })
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return (data.response || "").trim() || "_empty response_";
-    } catch (e) {
-      return `_LLM HTTP error: ${mdEscape(e.message)}_`;
-    }
-  }
-
-  // Fallback: spawn CLI if available in PATH
-  return await llmLimit(() =>
-    new Promise((resolve) => {
-      try {
-        const child = spawn("ollama", ["run", llmModel], { stdio: ["pipe", "pipe", "pipe"] });
-        let out = "", err = "";
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (err += d.toString()));
-        child.on("close", () => {
-          resolve(out.trim() || `_LLM error (${llmModel}): ${mdEscape(err.trim()).slice(0,300)}_`);
-        });
-        child.stdin.write(prompt);
-        child.stdin.end();
-      } catch (e) {
-        resolve(`_LLM not available: ${mdEscape(e.message)}_`);
-      }
-    })
-  );
-}
-
     // const tasks = rows.map((row) => async () => {
     //   const word = clean(row.word || "");
     //   const sentence = clean(row.sentence || "");
@@ -518,13 +452,16 @@ Task:
         }
       }
 
-            // optional LLM enrichment (Markdown), strictly sequential
       let llmMd = "";
       if (includeLlm && llmModel) {
         try {
-          llmMd = await runOllama(word, sentence || "");
+          llmMd = await llmLimit(() => getLlmResponse({
+            model: llmModel,
+            word,
+            sentence: sentence || ""
+          }));
         } catch (e) {
-          llmMd = `_LLM failed: ${mdEscape(e.message)}_`;
+          llmMd = `_LLM failed: ${String(e.message)}_`;
         }
       }
 

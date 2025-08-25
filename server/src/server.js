@@ -12,10 +12,7 @@ import Database from "better-sqlite3";
 
 import { EventEmitter } from "node:events";
 
-const ALLOWED_MODELS   = (process.env.OLLAMA_MODELS||"").split(/[,;\s]+/).filter(Boolean);
-const MODELS_ENABLED   = ALLOWED_MODELS.length > 0;
-let   MODELS_INFO      = {};
-try { MODELS_INFO = JSON.parse(process.env.OLLAMA_MODELS_INFO||"{}"); } catch {}
+import { MODELS_ENABLED, isModelAllowed, listAvailableModels } from "./LLMs/llm.js";
 
 // in-memory job registry  (id → {emitter, fileName, downloadId})
 const jobs = new Map();
@@ -217,11 +214,7 @@ app.post("/api/convert", async (req, res, next) => {
     if (includeLlm) {
       assert(MODELS_ENABLED, "LLM support is disabled on this server.", 400);
       assert(llmModel,      "No LLM model chosen.",                     400);
-      assert(
-        ALLOWED_MODELS.includes(llmModel),
-        `Model "${llmModel}" is not allowed.`,
-        400
-      );
+      assert(isModelAllowed(llmModel), `Model "${llmModel}" is not allowed.`, 400);
     }
 
     const model = includeLlm ? llmModel : undefined;
@@ -487,7 +480,7 @@ app.post("/api/job/:id/delete", requirePassword, async (req,res) => {
 // Helper to expose catalogue to the UI
 app.get("/api/llm-models", (_req,res)=>{
   if (!MODELS_ENABLED) return res.json({ok:true, models:[]});
-  const list = ALLOWED_MODELS.map(id=>({id,...(MODELS_INFO[id]||{name:id,quality:"",notes:""})}));
+  const list = listAvailableModels(); // [{id, name, quality, notes, provider}]
   res.json({ok:true, models:list});
 });
 
