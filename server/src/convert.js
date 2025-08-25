@@ -8,8 +8,28 @@ import AnkiExport from "@steve2955/anki-apkg-export";
 import { load as cheerioLoad } from "cheerio";
 import { marked } from "marked";
 import { spawn } from "node:child_process";
+import JSZip from "jszip";
+import { spawnSync } from 'node:child_process';
 
 import { getLlmResponse } from "./LLMs/llm.js";
+
+// ---------------------------------------------------------------------------
+// Fallback decompressor.
+// Uses the system `zstd` executable so it works everywhere (no native build).
+// ---------------------------------------------------------------------------
+export function decompress(buffer) {
+  const proc = spawnSync(
+    'zstd',
+    ['-d', '-c', '--no-progress'],      // -d = decompress, -c = stdout
+    { input: buffer, maxBuffer: 1024 * 1024 * 64 } // 64 MiB safety
+  );
+  if (proc.status !== 0) {
+    throw new Error(
+      `zstd exited with ${proc.status}: ${proc.stderr.toString()}`
+    );
+  }
+  return proc.stdout;                   // <Buffer …> suitable for JSZip etc.
+}
 
 // --- NEW: helpers & color constants ---
 const escapeRegExp = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -78,6 +98,83 @@ function extractDefBlock($, $block) {
   });
   return { def, level: level || null, examples };
 }
+
+/** Extract Kindle IDs from an .apkg (from the FRONT field’s trailing ID). */
+export async function extractIdsFromApkg(apkgPath) {
+  // 1️⃣  Load the .apkg as a zip
+  const buf  = await fs.readFile(apkgPath);
+  const zip  = await JSZip.loadAsync(buf);
+  const files = Object.keys(zip.files);
+
+  // 2️⃣  Choose the right internal DB file
+  //     • prefer the new zstd-compressed `.anki21b`
+  //     • otherwise fall back to legacy names
+  let collName =
+    files.find(n => /^collection\.anki21b$/i.test(n)) ??
+    files.find(n => /^collection\.(anki21|anki2|sqlite)$/i.test(n));
+
+  if (!collName) throw new Error("Invalid APKG: collection DB not found.");
+
+  // 3️⃣  Extract (and decompress if necessary) to a Buffer
+  let dbBuf = await zip.files[collName].async("nodebuffer");
+
+  if (/\.anki21b$/i.test(collName)) {
+    try {
+      dbBuf = await decompress(dbBuf);          // ⇠ raw SQLite bytes
+    } catch (e) {
+      throw new Error("Failed to decompress .anki21b (need zstd?): " + e.message);
+    }
+  }
+
+  // 4️⃣  Use a temp file for better-sqlite3
+  const tmpPath = apkgPath + ".sqlite.tmp";
+  await fs.writeFile(tmpPath, dbBuf);
+
+  const db = new Database(tmpPath, { readonly: true });
+  try {
+    const rows = db.prepare("SELECT flds FROM notes").all();
+    const ids = [];
+
+    for (const r of rows) {
+      const front = String((r.flds || "").split("\x1f")[0] || "");
+
+      // Prefer explicit <div class="id">…</div>
+      let m = front.match(/<div\s+class=["']id["']\s*>([^<]+)<\/div>\s*$/i);
+      let id = m?.[1]?.trim() ?? "";
+
+      // Fallback: last “token” outside of tags
+      if (!id) {
+        const stripped = front.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        id = stripped.split(" ").pop() ?? "";
+      }
+
+      if (id) ids.push(id);
+    }
+    return Array.from(new Set(ids));
+  } finally {
+    try { db.close(); } catch {}
+    try { await fs.rm(tmpPath, { force: true }); } catch {}
+  }
+}
+
+/** Server-side preview counters for the UI banner. */
+export function computePreviewStats({ dbPath, bookId, perWord = false, existingIds = [] }) {
+  const db = openDb(dbPath);
+  try {
+    const rows = perWord ? getRowsPerWord(db, bookId) : getRowsPerLookup(db, bookId);
+    const uniqueWords = getRowsPerWord(db, bookId).length;
+    const set = new Set((existingIds || []).map(s => String(s).trim()).filter(Boolean));
+    let overlap = 0;
+    for (const r of rows) if (set.has(String(r.kindle_id || "").trim())) overlap++;
+    const curr = rows.length;
+    const added = Math.max(0, curr - overlap);
+    return { uniqueWords, curr, overlap, added };
+  } finally {
+    db.close();
+  }
+}
+
+
 
 async function fetchHtml(url, tries = 3) {
   let lastErr;
@@ -382,12 +479,17 @@ export async function buildApkg({
   onProgress = () => {},
   includeLlm = false,
   llmModel = null,
+  existingIds = null
 }) {
   // Validate presence
   await fs.access(dbPath);
   const db = openDb(dbPath);
   try {
-    const rows = perWord ? getRowsPerWord(db, bookId) : getRowsPerLookup(db, bookId);
+    const rowsAll = perWord ? getRowsPerWord(db, bookId) : getRowsPerLookup(db, bookId);
+    const existingSet = new Set((existingIds || []).map(s => String(s).trim()).filter(Boolean));
+    const rows = existingSet.size
+      ? rowsAll.filter(r => !existingSet.has(String(r.kindle_id || "").trim()))
+      : rowsAll;
     if (!rows.length) throw new Error("No lookups/words found for that book.");
 
     const apkg = new AnkiExport(deckName || "Kindle Vocab");
@@ -395,7 +497,7 @@ export async function buildApkg({
 
     let done = 0;
     const total = rows.length;
-    let addedCards = 0;    
+    let addedCards = 0;  
     const startedAt = Date.now();
     // send an early tick so UI knows the total even before first card finishes
     onProgress({ done, total });

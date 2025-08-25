@@ -7,7 +7,7 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { nanoid } from "nanoid";
 import { env, toInt, assert } from "./util.js";
-import { listBooksFromVocab, buildApkg } from "./convert.js";
+import { listBooksFromVocab, buildApkg, extractIdsFromApkg, computePreviewStats } from "./convert.js";
 import Database from "better-sqlite3";
 
 import { EventEmitter } from "node:events";
@@ -110,6 +110,7 @@ jdb.exec(`
     total        INTEGER,
     done         INTEGER DEFAULT 0,
     newCards     INTEGER, -- actual number of cards generated
+    bookWords    INTEGER, -- unique WORDS in the selected book at build time
     downloadId   TEXT,
     fileName     TEXT,
     mdDownloadId TEXT,
@@ -169,6 +170,13 @@ if (!hasNewCards) {
   catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
 }
 
+// ── Schema upgrade: add bookWords if missing ───────────────────────────────
+const cols3 = jdb.prepare(`PRAGMA table_info(jobs)`).all();
+const hasBookWords = cols3.some(c => c.name === "bookWords");
+if (!hasBookWords) {
+  try { jdb.exec(`ALTER TABLE jobs ADD COLUMN bookWords INTEGER`); }
+  catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+}
 
 const sqlInsertJob = jdb.prepare(`
   INSERT INTO jobs (jobId, token, bookId, bookTitle, deckName, includeLlm, includeSmart,
@@ -176,6 +184,9 @@ const sqlInsertJob = jdb.prepare(`
   VALUES (@jobId, @token, @bookId, @bookTitle, @deckName, @includeLlm, @includeSmart,
           @perWord, @noScrape, @concurrency, @llmModel, 'running', @startedAt)
 `);
+
+const sqlPatchBookWords = jdb.prepare(`UPDATE jobs SET bookWords=@bookWords WHERE jobId=@jobId`);
+
 const sqlUpdateProgress = jdb.prepare(
   `UPDATE jobs SET done=@done, total=COALESCE(total,@total) WHERE jobId=@jobId`
 );
@@ -223,6 +234,56 @@ function getBookMetaFromVocab(dbPath, bookId) {
   }
 }
 
+// Upload an OLD .apkg to dedupe by Kindle IDs
+app.post("/api/upload-apkg", requirePassword, upload.single("apkg"), async (req, res, next) => {
+  try {
+    assert(req.file, "Missing file 'apkg' (.apkg)");
+    assert(/\.apkg$/i.test(req.file.originalname || req.file.filename || ""), "Please upload a .apkg file");
+    const ids = await extractIdsFromApkg(req.file.path);
+    const apkgToken = nanoid();
+    const meta = { apkgToken, path: req.file.path, createdAt: Date.now(), count: ids.length };
+    await fs.writeFile(path.join(uploadDir, `apkg-${apkgToken}.json`), JSON.stringify(meta), "utf8");
+    await fs.writeFile(path.join(uploadDir, `apkg-${apkgToken}.ids.json`), JSON.stringify(ids), "utf8");
+    res.json({ ok: true, apkgToken, count: ids.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Preview counters for the banner above Build
+app.post("/api/preview-stats", requirePassword, async (req, res) => {
+  try {
+    const { token, bookId, perWord, apkgToken } = req.body || {};
+    assert(token && bookId, "Missing token or bookId");
+    const metaPath = path.join(uploadDir, `${token}.json`);
+    const exists = await fs.access(metaPath).then(() => true).catch(() => false);
+    assert(exists, "Invalid or expired token");
+    const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+    let existingIds = [];
+    if (apkgToken) {
+      const idsPath = path.join(uploadDir, `apkg-${apkgToken}.ids.json`);
+      const ok = await fs.access(idsPath).then(()=>true).catch(()=>false);
+      assert(ok, "Old APKG token not found");
+      existingIds = JSON.parse(await fs.readFile(idsPath, "utf8"));
+    }
+    const { uniqueWords, curr, overlap, added } = computePreviewStats({
+      dbPath: meta.path, bookId, perWord: !!perWord, existingIds
+    });
+    res.json({
+      ok: true,
+      stats: {
+        oldTotal: (apkgToken ? existingIds.length : 0),
+        oldOverlap: overlap,
+        newTotal: curr,
+        added,
+        totalWords: uniqueWords
+      }
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ ok:false, error: e.message || "Failed to compute preview" });
+  }
+});
+
 
 // Upload vocab.db, return token + book list
 app.post("/api/upload", requirePassword, upload.single("db"), async (req, res, next) => {
@@ -258,7 +319,8 @@ app.post("/api/convert", async (req, res, next) => {
       perWord, noScrape, concurrency,
       includeSmartVocab,
       includeLlm,
-      llmModel // optional (defaults inside convert.js)
+      llmModel, // optional (defaults inside convert.js)
+      apkgToken // optional: only build cards not in this APKG
     } = req.body || {};
     assert(token, "Missing token");
     assert(bookId, "Missing bookId");
@@ -279,6 +341,13 @@ app.post("/api/convert", async (req, res, next) => {
 
     const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
     const { title: bookTitle } = getBookMetaFromVocab(meta.path, bookId);
+    // Count unique Kindle WORDS for this book (for table)
+    let bookWords = null;
+    try {
+      const list = listBooksFromVocab(meta.path) || [];
+      const match = list.find(b => String(b.id) === String(bookId));
+      bookWords = match ? Number(match.unique_words || 0) : null;
+    } catch {}
 
     // ── 1. register a job ───────────────────────────────────────────────────
     const jobId      = nanoid();
@@ -315,11 +384,24 @@ app.post("/api/convert", async (req, res, next) => {
       startedAt: Date.now()
     });
 
+    if (bookWords != null) { try { sqlPatchBookWords.run({ jobId, bookWords }); } catch {} }
+
     // console.log("[convert] LLM:", { includeLlm: Boolean(includeLlm && model), llmModel: model });
 
     // ── 2. fire-and-forget worker ───────────────────────────────────────────
     (async () => {
       try {
+        // optional dedupe set from old APKG
+         let existingIds = null;
+         if (apkgToken) {
+           const idsPath = path.join(uploadDir, `apkg-${apkgToken}.ids.json`);
+           const ok = await fs.access(idsPath).then(()=>true).catch(()=>false);
+           if (ok) {
+             try { existingIds = JSON.parse(await fs.readFile(idsPath, "utf8")); }
+             catch { existingIds = null; }
+           }
+         }
+
          const result = await buildApkg({
           dbPath: meta.path,
           bookId,
@@ -331,6 +413,7 @@ app.post("/api/convert", async (req, res, next) => {
           includeSmartVocab: includeSmartVocab !== false, // default true
           includeLlm: Boolean(includeLlm && model),
           llmModel: model,
+          existingIds,
           onProgress: (p) => {
             // persist progressive counts (and total on first tick)
             try {

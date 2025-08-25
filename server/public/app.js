@@ -5,6 +5,7 @@ let token = null;
 let building = false;
 let models = [];       // list returned by /api/llm-models
 let llmAvailable = false;    // ⇢ true if server exposes ≥1 model
+let apkgToken = null;        // optional old APKG upload token
 
 // ── tiny helpers ─────────────────────────────────────────────────────────────
 function msg(el, text = "", isErr = false) {
@@ -115,9 +116,12 @@ $("uploadBtn").addEventListener("click", async () => {
       const o = sel.options[sel.selectedIndex];
       $("bookStats").textContent = o.dataset.stats || "";
       $("deck").value = (o.textContent || "Kindle Vocab").trim();  // always update
+      updatePreview().catch(()=>{});
     });
 
     $("step2").classList.remove("hidden");
+    // initial preview once book list is ready
+    updatePreview().catch(()=>{});
     msg($("s1msg"), "Upload OK.");
   } catch (e) {
     console.error(e);
@@ -126,6 +130,43 @@ $("uploadBtn").addEventListener("click", async () => {
     $("uploadBtn").disabled = false;
   }
 });
+// Live preview banner (old/new/added/total)
+async function updatePreview () {
+  const pw     = $("pw").value.trim() || loadPw();
+  const bookId = $("book")?.value;
+  if (!token || !bookId) return;
+
+  const body = {
+    token,
+    bookId,
+    perWord  : $("perWord").checked,
+    apkgToken: apkgToken || undefined
+  };
+
+  try {
+    const r = await fetch("/api/preview-stats", {
+      method : "POST",
+      headers: { "Content-Type":"application/json",
+                 "x-app-password": pw },
+      body   : JSON.stringify(body)
+    });
+    const { ok, stats, error } = await r.json();
+    if (!ok) throw new Error(error || "Preview failed");
+
+    /* write the four numbers */
+    $("oldCount").textContent    = apkgToken ? stats.oldTotal : "0";
+    $("kindleCount").textContent = stats.newTotal;
+    $("newCount").textContent    = stats.added;
+    $("finalCount").textContent  = stats.oldTotal + stats.added;
+
+  } catch (e) {
+    // fall-back: show dashes
+    ["oldCount","kindleCount","newCount","finalCount"]
+      .forEach(id => $(id).textContent = "–");
+  }
+}
+
+
 
 /* ╔══════════════════════════════════════════════════════════════════════════╗
    ║                     STEP 2 – build / convert click                      ║
@@ -144,7 +185,8 @@ $("buildBtn").addEventListener("click", async () => {
     includeSmartVocab: $("includeSmart").checked,
     concurrency: Number($("conc").value) || 1,
     includeLlm: llmAvailable ? $("includeLlm").checked : false,
-    llmModel: llmAvailable ? $("llmModel").value : undefined
+    llmModel: llmAvailable ? $("llmModel").value : undefined,
+    apkgToken: apkgToken || undefined
   };
 
   if (!token) { msg($("s2msg"), "No upload token. Upload first.", true); return; }
@@ -200,6 +242,7 @@ $("buildBtn").addEventListener("click", async () => {
       tr.innerHTML = `
         <td>${j.bookTitle || ""}</td>
         <td>${j.deckName || ""}</td>
+        <td>${(j.bookWords ?? null) != null ? j.bookWords : "–"}</td>
         <td>${(j.newCards ?? null) != null ? j.newCards : "–"}</td>
         <td>${j.status}</td>
         <td>${j.includeLlm ? "yes" : "no"}</td>
@@ -286,8 +329,86 @@ function formatBytes(bytes){
   fi.addEventListener("change", () => {
     if (fi.files && fi.files[0]) setSelectedFile(fi.files[0]);
   });
+  $("perWord").addEventListener("change", () =>
+  updatePreview().catch(() => {})
+);
 
   // Drag & drop
+  const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ["dragenter","dragover"].forEach(ev =>
+    dz.addEventListener(ev, (e) => { prevent(e); dz.classList.add("dragover"); })
+  );
+  ["dragleave","dragend","drop"].forEach(ev =>
+    dz.addEventListener(ev, (e) => { prevent(e); dz.classList.remove("dragover"); })
+  );
+  dz.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) setSelectedFile(f);
+  });
+})();
+
+// ── optional .apkg dropzone (for comparing / new-only build) ────────────────
+(function initApkgDropzone(){
+  const dz = document.getElementById("apkgDrop");
+  const fi = document.getElementById("oldApkg");
+  const info = document.getElementById("apkgDropInfo");
+  const panel = document.getElementById("comparePanel");
+
+  if (!dz || !fi) return;
+
+  const setSelectedFile = async (file) => {
+    if (!file) return;
+    if (!/\.apkg$/i.test(file.name)) {
+      msg($("s2msg"), "Please select a .apkg file.", true);
+      return;
+    }
+
+    /* 1️⃣ ─ upload to server ------------------------------------------------ */
+    const pw = $("pw").value.trim() || loadPw();
+    const fd = new FormData();
+    fd.append("apkg", file);
+
+    try {
+      const r  = await fetch("/api/upload-apkg", {
+        method: "POST",
+        headers: { "x-app-password": pw },
+        body: fd
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "Upload failed");
+
+      apkgToken = d.apkgToken;         // <-- global for subsequent preview calls
+
+      /* 2️⃣ ─ immediate local feedback ------------------------------------- */
+      $("oldCount").textContent = d.count ?? "0";
+
+    } catch (e) {
+      msg($("s2msg"), e.message, true);
+      return;
+    }
+
+    /* 3️⃣ ─ normal drop-zone visuals --------------------------------------- */
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fi.files = dt.files;
+
+    info.innerHTML =
+      `<span class="file-chip"><code>${file.name}</code> ${formatBytes(file.size)}</span>`;
+    dz.classList.add("hasfile");
+    panel.style.display = "";
+
+    /* 4️⃣ ─ ask server for full set of stats now that we have a token ------ */
+    updatePreview().catch(()=>{});
+  };
+
+  dz.addEventListener("click", () => fi.click());
+  dz.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fi.click(); }
+  });
+  fi.addEventListener("change", () => {
+    if (fi.files && fi.files[0]) setSelectedFile(fi.files[0]);
+  });
+
   const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
   ["dragenter","dragover"].forEach(ev =>
     dz.addEventListener(ev, (e) => { prevent(e); dz.classList.add("dragover"); })

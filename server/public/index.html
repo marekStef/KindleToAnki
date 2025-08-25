@@ -350,6 +350,8 @@
             <input id="file" type="file" accept=".db" class="sr-only" />
           </div>
 
+
+
           <button id="uploadBtn" class="btn">Upload & List Books</button>
           <div id="s1msg" class="muted"></div>
         </div>
@@ -398,6 +400,31 @@
           <div class="hint">Adds Cambridge’s “SMART Vocabulary” topic lists to the back of each card (curated clusters
             of related words). Turn this <em>off</em> if you prefer a leaner back side or smaller deck file size.</div>
 
+          <!-- OPTIONAL old .apkg upload (to only build new cards) -->
+          <label for="oldApkg" style="margin-top:12px">Optional: existing <code>.apkg</code> to compare</label>
+          <div id="apkgDrop" class="dropzone" tabindex="0" role="button"
+            aria-label="Drop an existing .apkg here or click to browse">
+            <div class="dz-inner">
+              <!-- simple download-arrow icon -->
+              <svg class="dz-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 3v12m0 0 5-5m-5 5-5-5" />
+                <path d="M4 19h16" />
+              </svg>
+              <div class="dz-title">Drop your existing <code>.apkg</code> (optional)</div>
+              <div class="muted" id="apkgDropInfo">…or click to choose a file</div>
+            </div>
+            <!-- visually hidden input to keep keyboard & picker support -->
+            <input id="oldApkg" type="file" accept=".apkg" class="sr-only" />
+          </div>
+
+          <!-- live comparison summary (shows once an .apkg is chosen) -->
+          <div id="comparePanel" style="display:none">
+  <p>Old deck cards: <strong id="oldCount">–</strong></p>
+  <p>Kindle entries for this book: <strong id="kindleCount">–</strong></p>
+  <p>New cards to add: <strong id="newCount">–</strong></p>
+  <p>New total after build: <strong id="finalCount">–</strong></p>
+</div>
+
           <button id="buildBtn" class="btn" style="margin-top:0.5rem;">Build .apkg</button>
 
           <div id="pbWrap" class="hidden"><progress id="pb" max="100" value="0"></progress> <span
@@ -429,6 +456,7 @@
           <tr>
             <th>Book</th>
             <th>Deck</th>
+            <th>Num of words in Kindle for this book</th>
             <th>New cards</th>
             <th>Status</th>
             <th>LLM</th>
