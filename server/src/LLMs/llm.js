@@ -130,20 +130,25 @@ async function runOpenAI({ model, prompt, system }) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is not set.");
 
+  const isFixedTempModel = /^gpt-5\b/i.test(model);
+
+  const payload = {
+      model,
+      messages: [
+        { role: "system", content: system || "You are an English explainer." },
+        { role: "user", content: prompt }
+      ]
+  };
+
+  if (!isFixedTempModel) payload.temperature = 0.2;
+
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${key}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: system || "You are an English explainer." },
-        { role: "user", content: prompt }
-      ]
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!res.ok) {
