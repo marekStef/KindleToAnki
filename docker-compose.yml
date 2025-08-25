@@ -16,10 +16,15 @@ services:
       # LLM integration
       
       - OLLAMA_URL=${OLLAMA_URL}
-
       # Leave the line below *unset* to disable LLM completely
       - OLLAMA_MODELS=${OLLAMA_MODELS}
       - OLLAMA_MODELS_INFO=${OLLAMA_MODELS_INFO}
+
+      # OpenAI integration (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODELS=${OPENAI_MODELS}
+      - OPENAI_MODELS_INFO=${OPENAI_MODELS_INFO}
+      
       - TZ=${TZ}
     # ports:
     #   - "880:8080"
