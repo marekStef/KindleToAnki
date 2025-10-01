@@ -625,26 +625,6 @@ app.use((err, req, res, _next) => {
   res.status(status).json({ ok: false, error: err.message || "Server error" });
 });
 
-// Background cleanup (uploads & outputs)
-const MIN = 60 * 1000;
-const TTL = CLEANUP_MINUTES * MIN;
-setInterval(async () => {
-  const now = Date.now();
-  // Clean upload metas & files
-  for (const dir of [uploadDir, outDir]) {
-    const list = await fs.readdir(dir).catch(() => []);
-    for (const f of list) {
-      try {
-        const full = path.join(dir, f);
-        const stat = await fs.stat(full);
-        if (now - stat.mtimeMs > TTL) {
-          await fs.rm(full, { force: true, recursive: false });
-        }
-      } catch {}
-    }
-  }
-}, 5 * MIN);
-
 // move a finished .apkg into data/out/deleted/
 async function trashJobFile(downloadId){
   const files = await fs.readdir(outDir);
