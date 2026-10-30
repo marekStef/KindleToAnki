@@ -1,0 +1,54 @@
+name: Desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            install: npm ci
+            dist: npx electron-builder --win --x64 --publish never
+          - name: macos-arm64
+            os: macos-latest
+            install: npm ci
+            dist: npx electron-builder --mac --arm64 --publish never
+          # Intel Macs: same arm64 runner, but install the x64 USB binary.
+          - name: macos-x64
+            os: macos-latest
+            install: npm ci --os=darwin --cpu=x64
+            dist: npx electron-builder --mac --x64 --publish never
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: ${{ matrix.install }}
+      - run: npm test
+      - run: ${{ matrix.dist }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kindle-to-anki-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
