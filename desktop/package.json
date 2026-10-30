@@ -1,0 +1,91 @@
+{
+  "name": "kindle-to-anki-desktop",
+  "productName": "Kindle to Anki",
+  "version": "1.0.0",
+  "description": "Pulls the Vocabulary Builder database straight off a connected Kindle (USB drive or MTP) and turns it into Anki decks.",
+  "author": "Marek Stefanec",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "probe": "node scripts/kindle-probe.mjs",
+    "icon": "electron scripts/make-icon.mjs",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist:mac": "electron-builder --mac --publish never"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "jszip": "^3.10.2",
+    "marked": "^16.4.2",
+    "sql.js": "^1.14.2",
+    "usb": "^3.1.0"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "cz.marekstefanec.kindletoanki",
+    "productName": "Kindle to Anki",
+    "copyright": "Copyright © 2026 Marek Stefanec",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.{map,d.ts}",
+      "!node_modules/sql.js/dist/{sql-asm*,*-debug.*,sql-wasm-browser*,worker.*,*.zip}"
+    ],
+    "npmRebuild": false,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "resetAdHocDarwinSignature": true
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Kindle-to-Anki-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Kindle-to-Anki-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.education",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "artifactName": "Kindle-to-Anki-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "NSRemovableVolumesUsageDescription": "Kindle to Anki reads system/vocabulary/vocab.db from your Kindle when it is connected as a USB drive."
+      }
+    }
+  }
+}

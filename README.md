@@ -2,6 +2,9 @@
 
 A tiny password‑gated site to upload a Kindle `vocab.db`, pick a book, choose deck options, and download an Anki `.apkg`.
 
+> **Desktop app (Windows & macOS):** [`desktop/`](desktop/README.md) does the same, but finds and copies
+> `vocab.db` straight off a connected Kindle, including newer MTP Kindles on macOS without Amazon's USB helper.
+
 ## Features
 - Password gate (set `APP_PASSWORD` in environment)
 - Upload `vocab.db` (SQLite)
